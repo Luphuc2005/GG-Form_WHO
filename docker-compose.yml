@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ovarian_survey_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ovarian_survey}
+      POSTGRES_USER: ${POSTGRES_USER:-survey_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_secure_db_pass}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-survey_user} -d ${POSTGRES_DB:-ovarian_survey}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - survey_internal
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ovarian_survey_backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-survey_user}:${POSTGRES_PASSWORD:-change_me_secure_db_pass}@postgres:5432/${POSTGRES_DB:-ovarian_survey}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
+      SECRET_KEY: ${SECRET_KEY:-CHANGE_ME_VERY_SECURE_JWT_SECRET_32_BYTES_MIN}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ChangeMeAdmin2026!}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      ENABLE_DOCS: ${ENABLE_DOCS:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - survey_internal
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: ovarian_survey_nginx
+    restart: unless-stopped
+    ports:
+      - "${APP_HTTP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - survey_internal
+
+volumes:
+  postgres_data:
+    name: ovarian_survey_postgres_data
+
+networks:
+  survey_internal:
+    name: ovarian_survey_network
+    driver: bridge

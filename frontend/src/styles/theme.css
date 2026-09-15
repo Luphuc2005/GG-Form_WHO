@@ -1,0 +1,37 @@
+:root {
+  --primary: #673ab7;
+  --primary-hover: #5e35b1;
+  --primary-light: #f4effc;
+  --background: #f0ebf8;
+  --surface: #ffffff;
+  --text-primary: #202124;
+  --text-secondary: #5f6368;
+  --border: #dadce0;
+  --border-focus: #673ab7;
+  --error: #d93025;
+  --error-bg: #fce8e6;
+  --success: #188038;
+  --success-bg: #e6f4ea;
+  --card-radius: 8px;
+  --box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  --box-shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+*, *::before, *::after, html, body, button, input, textarea, select, table, th, td, h1, h2, h3, h4, h5, h6, p, span, label, a, div, code, pre, small, strong, em, b, i {
+  font-family: "Times New Roman", Times, serif !important;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  padding: 0;
+}

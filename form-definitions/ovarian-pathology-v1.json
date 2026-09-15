@@ -1,0 +1,201 @@
+{
+  "form_key": "ovarian-pathology-who",
+  "version": 1,
+  "title": "PHÂN LOẠI GIẢI PHẪU BỆNH CỦA U BUỒNG TRỨNG THEO WHO",
+  "description": "Biểu mẫu khảo sát chuyên môn thu thập dữ liệu phân loại giải phẫu bệnh của u buồng trứng theo hệ thống phân loại của Tổ chức Y tế Thế giới (WHO).",
+  "fields": [
+    {
+      "id": "pathology",
+      "type": "checkbox-group",
+      "label": "Giải phẫu bệnh",
+      "required": true,
+      "error_message": "Vui lòng chọn ít nhất một kết quả giải phẫu bệnh.",
+      "options": [
+        {
+          "id": "serous_benign",
+          "numericCode": null,
+          "label": "U tuyến thanh dịch lành tính",
+          "children": []
+        },
+        {
+          "id": "serous_borderline",
+          "numericCode": null,
+          "label": "U tuyến thanh dịch giáp biên ác",
+          "children": []
+        },
+        {
+          "id": "serous_carcinoma_low_grade",
+          "numericCode": null,
+          "label": "Carcinoma tuyến thanh dịch độ mô học thấp",
+          "children": []
+        },
+        {
+          "id": "serous_carcinoma_high_grade",
+          "numericCode": null,
+          "label": "Carcinoma tuyến thanh dịch độ mô học cao",
+          "children": [
+            {
+              "id": "mucinous_benign",
+              "numericCode": null,
+              "label": "U tuyến dịch nhầy lành tính",
+              "children": []
+            },
+            {
+              "id": "mucinous_borderline",
+              "numericCode": null,
+              "label": "U tuyến dịch nhầy giáp biên ác",
+              "children": []
+            },
+            {
+              "id": "mucinous_carcinoma",
+              "numericCode": null,
+              "label": "Carcinoma tuyến dịch nhầy",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "endometrioma_benign",
+          "numericCode": null,
+          "label": "Nang lạc nội mạc tử cung lành",
+          "children": []
+        },
+        {
+          "id": "endometrioid_carcinoma",
+          "numericCode": null,
+          "label": "Carcinoma dạng nội mạc tử cung",
+          "children": [
+            {
+              "id": "clear_cell_borderline",
+              "numericCode": null,
+              "label": "U tế bào sáng giáp biên ác",
+              "children": []
+            },
+            {
+              "id": "clear_cell_carcinoma",
+              "numericCode": null,
+              "label": "Carcinoma tế bào sáng",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "seromucinous_benign",
+          "numericCode": null,
+          "label": "U tuyến dịch trong – nhầy lành",
+          "children": []
+        },
+        {
+          "id": "seromucinous_borderline",
+          "numericCode": null,
+          "label": "U tuyến dịch trong – nhầy giáp biên ác",
+          "children": [
+            {
+              "id": "brenner_tumor",
+              "numericCode": null,
+              "label": "U Brenner",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "fibroma",
+          "numericCode": null,
+          "label": "U sợi",
+          "children": []
+        },
+        {
+          "id": "cellular_fibroma",
+          "numericCode": null,
+          "label": "U sợi giàu tế bào",
+          "children": []
+        },
+        {
+          "id": "thecoma",
+          "numericCode": null,
+          "label": "U tế bào vỏ",
+          "children": [
+            {
+              "id": "granulosa_adult",
+              "numericCode": null,
+              "label": "U tế bào hạt người lớn",
+              "children": []
+            },
+            {
+              "id": "granulosa_juvenile",
+              "numericCode": null,
+              "label": "U tế bào hạt thiếu niên",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "mature_teratoma",
+          "numericCode": null,
+          "label": "U quái trưởng thành lành",
+          "children": []
+        },
+        {
+          "id": "immature_teratoma",
+          "numericCode": null,
+          "label": "U quái không trưởng thành",
+          "children": []
+        },
+        {
+          "id": "dysgerminoma",
+          "numericCode": null,
+          "label": "U nghịch mầm",
+          "children": []
+        },
+        {
+          "id": "yolk_sac_tumor",
+          "numericCode": null,
+          "label": "U túi noãn hoàng",
+          "children": [
+            {
+              "id": "follicular_cyst",
+              "numericCode": null,
+              "label": "Nang trứng",
+              "children": []
+            },
+            {
+              "id": "corpus_luteum_cyst",
+              "numericCode": null,
+              "label": "Nang hoàng thể",
+              "children": []
+            },
+            {
+              "id": "pathology_other",
+              "numericCode": null,
+              "label": "Khác",
+              "has_other_text": true,
+              "other_placeholder": "Vui lòng ghi rõ",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "classification",
+      "type": "radio",
+      "label": "Lành/Ác",
+      "required": true,
+      "error_message": "Đây là câu hỏi bắt buộc.",
+      "options": [
+        {
+          "id": "benign",
+          "label": "Lành"
+        },
+        {
+          "id": "borderline",
+          "label": "Giáp biên ác"
+        },
+        {
+          "id": "malignant",
+          "label": "Ác"
+        }
+      ]
+    }
+  ]
+}
