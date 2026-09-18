@@ -36,6 +36,8 @@ services:
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       ENABLE_DOCS: ${ENABLE_DOCS:-true}
+      GOOGLE_SHEETS_WEBHOOK_URL: ${GOOGLE_SHEETS_WEBHOOK_URL:-}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_SPREADSHEET_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

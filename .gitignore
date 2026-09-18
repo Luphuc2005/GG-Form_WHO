@@ -27,6 +27,7 @@ wheels/
 .installed.cfg
 *.egg
 .pytest_cache/
+.pytest-tmp/
 .coverage
 htmlcov/
 
@@ -55,3 +56,29 @@ backups/
 
 # Logs
 *.log
+
+# Local delivery worktrees and review artifacts
+/.git-delivery/
+
+# Private examples, extracted reference data, and one-off local tools
+/ex_data/
+/extracted_fields.json
+/call_resync.py
+/check_sections.py
+/check_webhook.py
+/clean_admin.py
+/clean_deps.py
+/clean_imports.py
+/replace_sec6_sec7.py
+/test_para.py
+/test_sheet.py
+/test_wb.py
+/update_admin_table.py
+/update_csv.py
+/update_para_backend.py
+/update_para_ui.py
+/update_so_hs.py
+/update_step1.py
+/backend/run_resync.py
+/backend/test_col.py
+/backend/test_sync_direct.py
