@@ -1,7 +1,8 @@
 export interface FormOption {
   id: string;
   label: string;
-  numericCode?: number | null;
+  numericCode?: string | number | null;
+  classification?: string | null;
   has_other_text?: boolean;
   other_placeholder?: string;
   children?: FormOption[];

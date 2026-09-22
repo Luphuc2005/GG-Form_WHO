@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class SelectedOptionPayload(BaseModel):
@@ -19,8 +19,10 @@ class PathologyAnswerPayload(BaseModel):
 
 
 class AnswersPayload(BaseModel):
-    pathology: PathologyAnswerPayload
-    classification: str
+    model_config = ConfigDict(extra="allow")
+    pathology: Optional[PathologyAnswerPayload] = Field(default_factory=PathologyAnswerPayload)
+    classification: Optional[str] = "unspecified"
+    clinical_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class SubmissionCreateRequest(BaseModel):
