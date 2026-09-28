@@ -6,195 +6,164 @@
   "fields": [
     {
       "id": "pathology",
-      "type": "checkbox-group",
-      "label": "Giải phẫu bệnh",
+      "type": "radio",
+      "label": "Phân loại Giải phẫu bệnh theo WHO",
       "required": true,
-      "error_message": "Vui lòng chọn ít nhất một kết quả giải phẫu bệnh.",
+      "error_message": "Vui lòng chọn một kết quả giải phẫu bệnh theo WHO.",
       "options": [
         {
-          "id": "serous_benign",
-          "numericCode": null,
-          "label": "U tuyến thanh dịch lành tính",
+          "id": "serous_cystadenoma_8441_0",
+          "numericCode": "8441/0",
+          "label": "U thanh dịch lành tính/Serous cystadenoma (8441/0)",
+          "classification": "benign",
           "children": []
         },
         {
-          "id": "serous_borderline",
-          "numericCode": null,
-          "label": "U tuyến thanh dịch giáp biên ác",
+          "id": "serous_borderline_8442_1",
+          "numericCode": "8442/1",
+          "label": "U thanh dịch giáp biên ác/Serous borderline tumour (8442/1)",
+          "classification": "borderline",
           "children": []
         },
         {
-          "id": "serous_carcinoma_low_grade",
-          "numericCode": null,
-          "label": "Carcinoma tuyến thanh dịch độ mô học thấp",
+          "id": "lgsc_8460_3",
+          "numericCode": "8460/3",
+          "label": "Ung thư biểu mô tuyến thanh dịch độ thấp/Low-grade serous carcinoma LGSC (8460/3)",
+          "classification": "malignant",
           "children": []
         },
         {
-          "id": "serous_carcinoma_high_grade",
-          "numericCode": null,
-          "label": "Carcinoma tuyến thanh dịch độ mô học cao",
-          "children": [
-            {
-              "id": "mucinous_benign",
-              "numericCode": null,
-              "label": "U tuyến dịch nhầy lành tính",
-              "children": []
-            },
-            {
-              "id": "mucinous_borderline",
-              "numericCode": null,
-              "label": "U tuyến dịch nhầy giáp biên ác",
-              "children": []
-            },
-            {
-              "id": "mucinous_carcinoma",
-              "numericCode": null,
-              "label": "Carcinoma tuyến dịch nhầy",
-              "children": []
-            }
-          ]
+          "id": "hgsc_8461_3",
+          "numericCode": "8461/3",
+          "label": "Ung thư biểu mô tuyến thanh dịch độ cao/High-grade serous carcinoma HGSC (8461/3)",
+          "classification": "malignant",
+          "children": []
+        },
+        {
+          "id": "mucinous_cystadenoma_8470_0",
+          "numericCode": "8470/0",
+          "label": "U dịch nhầy lành tính/Mucinous cystadenoma (8470/0)",
+          "classification": "benign",
+          "children": []
+        },
+        {
+          "id": "mucinous_borderline_8472_1",
+          "numericCode": "8472/1",
+          "label": "U dịch nhầy giáp biên ác/Mucinous borderline tumour (8472/1)",
+          "classification": "borderline",
+          "children": []
+        },
+        {
+          "id": "mucinous_adenocarcinoma_8480_3",
+          "numericCode": "8480/3",
+          "label": "Ung thư biểu mô tuyến dịch nhầy/Mucinous adenocarcinoma (8480/3)",
+          "classification": "malignant",
+          "children": []
         },
         {
           "id": "endometrioma_benign",
-          "numericCode": null,
+          "numericCode": "Nang lạc NMTC",
           "label": "Nang lạc nội mạc tử cung lành",
+          "classification": "benign",
           "children": []
         },
         {
-          "id": "endometrioid_carcinoma",
-          "numericCode": null,
-          "label": "Carcinoma dạng nội mạc tử cung",
-          "children": [
-            {
-              "id": "clear_cell_borderline",
-              "numericCode": null,
-              "label": "U tế bào sáng giáp biên ác",
-              "children": []
-            },
-            {
-              "id": "clear_cell_carcinoma",
-              "numericCode": null,
-              "label": "Carcinoma tế bào sáng",
-              "children": []
-            }
-          ]
-        },
-        {
-          "id": "seromucinous_benign",
-          "numericCode": null,
-          "label": "U tuyến dịch trong – nhầy lành",
+          "id": "endometrioid_adenocarcinoma_8380_3",
+          "numericCode": "8380/3",
+          "label": "Ung thư dạng nội mạc tử cung/Endometrioid adenocarcinoma (8380/3)",
+          "classification": "malignant",
           "children": []
         },
         {
-          "id": "seromucinous_borderline",
-          "numericCode": null,
-          "label": "U tuyến dịch trong – nhầy giáp biên ác",
-          "children": [
-            {
-              "id": "brenner_tumor",
-              "numericCode": null,
-              "label": "U Brenner",
-              "children": []
-            }
-          ]
-        },
-        {
-          "id": "fibroma",
-          "numericCode": null,
-          "label": "U sợi",
+          "id": "seromucinous_carcinoma_8474_3",
+          "numericCode": "8474/3",
+          "label": "Ung thư thanh dịch nhầy/Seromucinous carcinoma (8474/3)",
+          "classification": "malignant",
           "children": []
         },
         {
-          "id": "cellular_fibroma",
-          "numericCode": null,
-          "label": "U sợi giàu tế bào",
+          "id": "clear_cell_adenocarcinoma_8310_3",
+          "numericCode": "8310/3",
+          "label": "Ung thư tế bào sáng/Clear cell adenocarcinoma (8310/3)",
+          "classification": "malignant",
           "children": []
         },
         {
-          "id": "thecoma",
-          "numericCode": null,
-          "label": "U tế bào vỏ",
-          "children": [
-            {
-              "id": "granulosa_adult",
-              "numericCode": null,
-              "label": "U tế bào hạt người lớn",
-              "children": []
-            },
-            {
-              "id": "granulosa_juvenile",
-              "numericCode": null,
-              "label": "U tế bào hạt thiếu niên",
-              "children": []
-            }
-          ]
-        },
-        {
-          "id": "mature_teratoma",
-          "numericCode": null,
-          "label": "U quái trưởng thành lành",
+          "id": "brenner_tumor_9000_0",
+          "numericCode": "9000/0",
+          "label": "U Brenner (9000/0)",
+          "classification": "benign",
           "children": []
         },
         {
-          "id": "immature_teratoma",
-          "numericCode": null,
-          "label": "U quái không trưởng thành",
+          "id": "mature_teratoma_9080_0",
+          "numericCode": "9080/0",
+          "label": "U quái trưởng thành/Mature teratoma (9080/0)",
+          "classification": "benign",
           "children": []
         },
         {
-          "id": "dysgerminoma",
-          "numericCode": null,
-          "label": "U nghịch mầm",
+          "id": "immature_teratoma_9080_3",
+          "numericCode": "9080/3",
+          "label": "U quái không trưởng thành/Immature teratoma (9080/3)",
+          "classification": "malignant",
           "children": []
         },
         {
-          "id": "yolk_sac_tumor",
-          "numericCode": null,
-          "label": "U túi noãn hoàng",
-          "children": [
-            {
-              "id": "follicular_cyst",
-              "numericCode": null,
-              "label": "Nang trứng",
-              "children": []
-            },
-            {
-              "id": "corpus_luteum_cyst",
-              "numericCode": null,
-              "label": "Nang hoàng thể",
-              "children": []
-            },
-            {
-              "id": "pathology_other",
-              "numericCode": null,
-              "label": "Khác",
-              "has_other_text": true,
-              "other_placeholder": "Vui lòng ghi rõ",
-              "children": []
-            }
-          ]
+          "id": "dysgerminoma_9060_3",
+          "numericCode": "9060/3",
+          "label": "U nguyên bào mầm/Dysgerminoma (9060/3)",
+          "classification": "malignant",
+          "children": []
+        },
+        {
+          "id": "yolk_sac_tumor_9071_3",
+          "numericCode": "9071/3",
+          "label": "U túi noãn hoàng/Yolk sac tumour (9071/3)",
+          "classification": "malignant",
+          "children": []
+        },
+        {
+          "id": "fibroma_8810_0",
+          "numericCode": "8810/0",
+          "label": "U sợi buồng trứng/Fibroma (8810/0)",
+          "classification": "benign",
+          "children": []
+        },
+        {
+          "id": "cellular_fibroma_8810_1",
+          "numericCode": "8810/1",
+          "label": "U sợi giàu tế bào/Cellular fibroma (8810/1)",
+          "classification": "borderline",
+          "children": []
+        },
+        {
+          "id": "thecoma_8600_0",
+          "numericCode": "8600/0",
+          "label": "U vỏ xơ buồng trứng/Thecoma (8600/0)",
+          "classification": "benign",
+          "children": []
+        },
+        {
+          "id": "pathology_other",
+          "numericCode": "Khác",
+          "label": "Khác",
+          "classification": "unspecified",
+          "has_other_text": true,
+          "other_placeholder": "Nhập tên giải phẫu bệnh khác...",
+          "children": []
         }
       ]
     },
     {
       "id": "classification",
       "type": "radio",
-      "label": "Lành/Ác",
+      "label": "Phân loại bản chất khối u",
       "required": true,
-      "error_message": "Đây là câu hỏi bắt buộc.",
       "options": [
-        {
-          "id": "benign",
-          "label": "Lành"
-        },
-        {
-          "id": "borderline",
-          "label": "Giáp biên ác"
-        },
-        {
-          "id": "malignant",
-          "label": "Ác"
-        }
+        { "id": "benign", "label": "Lành tính" },
+        { "id": "borderline", "label": "Giáp biên ác" },
+        { "id": "malignant", "label": "Ác tính" }
       ]
     }
   ]
