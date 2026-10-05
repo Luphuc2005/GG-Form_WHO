@@ -13,13 +13,17 @@ class FormSchemaValidator:
 
     def validate(self, answers: AnswersPayload) -> None:
         """Validate an answers payload against the loaded form schema."""
+        is_clinical = bool(getattr(answers, "clinical_data", None))
+
         # 1. Check required top-level fields
         for field_id, field_def in self.fields_by_id.items():
             if field_id == "classification":
-                self._validate_classification(field_def, answers.classification)
+                if not is_clinical or (answers.classification and answers.classification != "unspecified"):
+                    self._validate_classification(field_def, answers.classification)
             elif field_id == "pathology":
-                self._validate_pathology(field_def, answers.pathology)
-            elif field_def.required:
+                if not is_clinical or (answers.pathology and answers.pathology.selected):
+                    self._validate_pathology(field_def, answers.pathology)
+            elif field_def.required and not is_clinical:
                 raise ValidationErrorException(
                     f"Trường bắt buộc '{field_def.label}' ({field_id}) không có trong payload."
                 )
@@ -59,7 +63,7 @@ class FormSchemaValidator:
                 raise ValidationErrorException(
                     f"Mục giải phẫu bệnh '{root_item.id}' không tồn tại trong danh mục schema."
                 )
-            
+
             node_def = root_options_map[root_item.id]
             is_other, text = self._validate_option_node_recursive(node_def, root_item)
             if is_other:

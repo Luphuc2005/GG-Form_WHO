@@ -1,3 +1,4 @@
+from app.services.export_svc import infer_classification
 import uuid
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -54,7 +55,7 @@ class SubmissionService:
             submission_uuid=request.submission_uuid,
             form_version_id=form_ver.id,
             payload_hash=payload_hash,
-            classification=request.answers.classification,
+            classification=infer_classification(request.answers.pathology.model_dump() if hasattr(request.answers.pathology, "model_dump") else (request.answers.pathology or {}), request.answers.classification),
             answers=request.answers.model_dump(mode="json"),
         )
 
@@ -62,7 +63,7 @@ class SubmissionService:
             db.add(new_sub)
             db.commit()
             db.refresh(new_sub)
-            
+
             # Trigger real-time sync to Google Sheets (if webhook configured)
             from app.services.google_sheets_svc import trigger_google_sheets_sync
             trigger_google_sheets_sync(new_sub.id)
