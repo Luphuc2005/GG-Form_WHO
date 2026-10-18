@@ -23,6 +23,20 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
 
     // =========================================================================
+    // HÀM TIỆN ÍCH: ĐỊNH DẠNG TEXT CHO CỘT PARA VÀ SỐ HS (ĐỂ KHÔNG MẤT SỐ 0000)
+    // =========================================================================
+    function formatSpecialColumns(headersList) {
+      if (!headersList || headersList.length === 0) return;
+      var maxRows = Math.max(10, sheet.getMaxRows());
+      for (var c = 0; c < headersList.length; c++) {
+        var hName = String(headersList[c] || "").toUpperCase();
+        if (hName.indexOf("PARA") !== -1 || hName.indexOf("SỐ HS") !== -1) {
+          sheet.getRange(2, c + 1, maxRows - 1, 1).setNumberFormat("@");
+        }
+      }
+    }
+
+    // =========================================================================
     // TRƯỜNG HỢP 1: XÓA PHIẾU KHẢO SÁT (Khi Admin bấm [Xóa] trên hệ thống web)
     // =========================================================================
     if (data.action === "delete") {
@@ -54,11 +68,13 @@ function doPost(e) {
         headerRange.setBackground("#673ab7"); // Màu tím đồng bộ
         headerRange.setFontColor("#ffffff");
         sheet.setFrozenRows(1);
+        formatSpecialColumns(data.headers);
       }
       if (data.rows && data.rows.length > 0) {
         for (var r = 0; r < data.rows.length; r++) {
           sheet.appendRow(data.rows[r]);
         }
+        formatSpecialColumns(data.headers);
       }
       sheet.getDataRange().setFontFamily("Times New Roman");
       return ContentService.createTextOutput(JSON.stringify({ status: "resynced", count: data.rows ? data.rows.length : 0 }))
@@ -75,12 +91,16 @@ function doPost(e) {
       headerRange.setBackground("#673ab7");
       headerRange.setFontColor("#ffffff");
       sheet.setFrozenRows(1);
+      formatSpecialColumns(data.headers);
     }
 
     // Chèn dòng dữ liệu mới vào cuối Sheet
     sheet.appendRow(data.row);
 
-    // Tự động áp dụng font Times New Roman
+    // Đảm bảo định dạng cột PARA và font chữ
+    if (data.headers) {
+      formatSpecialColumns(data.headers);
+    }
     sheet.getDataRange().setFontFamily("Times New Roman");
 
     return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
