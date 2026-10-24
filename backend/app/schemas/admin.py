@@ -29,6 +29,10 @@ class AdminSubmissionListItem(BaseModel):
     form_version: int
     classification: str
     created_at: datetime
+    so_hs: Optional[str] = None
+    ho_ten: Optional[str] = None
+    nam_sinh: Optional[str] = None
+    tuoi: Optional[str] = None
 
 
 class AdminSubmissionsPageResponse(BaseModel):

@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.config import get_settings
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import AppException, NotFoundException
 from app.database import get_db
 from app.models.admin_user import AdminUser
 from app.models.submission import Submission
@@ -98,6 +98,8 @@ def list_submissions(
     for item in items:
         ref_code = str(item.submission_uuid).split("-")[0].upper()
         ver_num = item.form_version.version if item.form_version else 1
+        answers = item.answers if isinstance(item.answers, dict) else {}
+        clinical = answers.get("clinical_data", {}) if isinstance(answers, dict) else {}
         result_items.append(
             AdminSubmissionListItem(
                 id=item.id,
@@ -106,6 +108,10 @@ def list_submissions(
                 form_version=ver_num,
                 classification=item.classification,
                 created_at=item.created_at,
+                so_hs=str(clinical.get("so_hs") or "").strip() or None,
+                ho_ten=str(clinical.get("ho_ten") or "").strip() or None,
+                nam_sinh=str(clinical.get("nam_sinh") or "").strip() or None,
+                tuoi=str(clinical.get("tuoi_phau_thuat") or "").strip() or None,
             )
         )
 
@@ -196,6 +202,8 @@ def resync_google_sheets(
 ):
     """Resync all current database submissions to Google Sheets."""
     res = resync_all_to_google_sheets(db)
+    if res.get("status") != "success":
+        raise AppException(502, "GOOGLE_SHEETS_SYNC_ERROR", res.get("message", "Không thể đồng bộ Google Sheets."))
     return res
 
 
