@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { SurveyPage } from "./pages/SurveyPage";
 import { SuccessPage } from "./pages/SuccessPage";
 import { AdminLoginPage } from "./pages/AdminLoginPage";
 import { AdminDashboardPage } from "./pages/AdminDashboardPage";
 import { DevelopModePage } from "./pages/DevelopModePage";
+import { ComprehensiveFormPage } from "./pages/ComprehensiveFormPage";
 
 export const App: React.FC = () => {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -48,6 +48,7 @@ export const App: React.FC = () => {
     sessionStorage.removeItem("survey_form_version");
     sessionStorage.removeItem("survey-draft:v1");
     sessionStorage.removeItem("survey-draft:preview");
+    sessionStorage.removeItem("clinical_form_draft");
     setIsSubmitted(false);
     window.history.pushState(null, "", "/");
     setCurrentPath("/");
@@ -95,8 +96,8 @@ export const App: React.FC = () => {
     }
   }
 
-  // 4. Default: Blank Survey Form
-  return <SurveyPage />;
+  // 4. Default: Comprehensive Form (53 Variables with clean medical Google Forms styling)
+  return <ComprehensiveFormPage />;
 };
 
 export default App;
