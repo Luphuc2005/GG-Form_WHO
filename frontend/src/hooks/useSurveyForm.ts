@@ -47,8 +47,35 @@ export function useSurveyForm(schema: FormSchemaDefinition | null, isPreview: bo
         const nextSet = new Set(prev.selectedIds);
         const nextOtherTexts = { ...prev.otherTexts };
 
+        let autoClass = prev.classification;
         if (isChecked) {
           nextSet.add(node.id);
+          const autoMap: Record<string, string> = {
+            serous_benign: "benign",
+            endometrioma_benign: "benign",
+            seromucinous_benign: "benign",
+            fibroma: "benign",
+            cellular_fibroma: "benign",
+            thecoma: "benign",
+            mature_teratoma: "benign",
+            serous_borderline: "borderline",
+            seromucinous_borderline: "borderline",
+            serous_carcinoma_low_grade: "malignant",
+            serous_carcinoma_high_grade: "malignant",
+            endometrioid_carcinoma: "malignant",
+            immature_teratoma: "malignant",
+            dysgerminoma: "malignant",
+            yolk_sac_tumor: "malignant",
+          };
+          if (autoMap[node.id]) {
+            autoClass = autoMap[node.id];
+          } else if (node.id.includes("benign") || node.id.includes("lanh")) {
+            autoClass = "benign";
+          } else if (node.id.includes("borderline") || node.id.includes("giap_bien")) {
+            autoClass = "borderline";
+          } else if (node.id.includes("carcinoma") || node.id.includes("malignant") || node.id.includes("ac")) {
+            autoClass = "malignant";
+          }
         } else {
           // Unchecking parent: clear parent AND ALL recursive descendants!
           const idsToRemove = [node.id, ...getAllDescendantIds(node)];
@@ -61,6 +88,7 @@ export function useSurveyForm(schema: FormSchemaDefinition | null, isPreview: bo
         return {
           ...prev,
           selectedIds: Array.from(nextSet),
+          classification: autoClass,
           otherTexts: nextOtherTexts,
         };
       });

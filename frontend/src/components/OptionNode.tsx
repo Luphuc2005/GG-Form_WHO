@@ -28,7 +28,7 @@ export const OptionNode: React.FC<OptionNodeProps> = ({
 
   return (
     <div className="option-wrapper" data-depth={depth}>
-      <label className="option-row">
+      <label className={`option-row ${isSelected ? "is-selected" : ""}`}>
         <input
           type="checkbox"
           id={`opt-${node.id}`}
@@ -36,7 +36,9 @@ export const OptionNode: React.FC<OptionNodeProps> = ({
           onChange={handleCheckboxChange}
           aria-expanded={hasChildren ? isSelected : undefined}
         />
-        <span className="option-label">{node.label}</span>
+        <span className="option-label" style={{ fontWeight: isSelected ? 600 : 400 }}>
+          {node.label}
+        </span>
       </label>
 
       {/* "Khác" text input (appears immediately when checked) */}
