@@ -114,6 +114,7 @@ export interface SubmissionDetail {
       other_text?: string;
     };
     classification?: string;
+    clinical_data?: Record<string, any>;
   };
   created_at: string;
 }
@@ -154,7 +155,7 @@ export async function publishAdminForm(
   return data;
 }
 
-export async function resyncGoogleSheets(token?: string): Promise<{ status: string; count?: number }> {
+export async function resyncGoogleSheets(token?: string): Promise<{ status: string; count: number; added_count?: number; verified: true }> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -164,8 +165,8 @@ export async function resyncGoogleSheets(token?: string): Promise<{ status: stri
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data?.error?.message || data?.detail || "Lỗi khi đồng bộ lại Google Sheet.");
+  if (!res.ok || data?.status !== "success" || data?.verified !== true || !Number.isInteger(data?.count)) {
+    throw new Error(data?.error?.message || data?.message || data?.detail || "Chưa xác minh được số phiếu thực tế trên Google Sheet.");
   }
   return data;
 }

@@ -51,6 +51,10 @@ export interface AdminSubmissionItem {
   form_version: number;
   classification: string;
   created_at: string;
+  so_hs?: string;
+  ho_ten?: string;
+  nam_sinh?: string;
+  tuoi?: string;
 }
 
 export interface AdminSubmissionsPage {

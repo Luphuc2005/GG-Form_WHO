@@ -14,13 +14,9 @@ import {
 } from "../api/client";
 import {
   Download,
-  LogOut,
   RefreshCw,
   Users,
-  Activity,
   Calendar,
-  FileSpreadsheet,
-  ExternalLink,
   Trash2,
   AlertTriangle,
   Eye,
@@ -30,11 +26,12 @@ import {
   Clock,
   ShieldCheck,
   FileText,
+  Search,
+  Printer,
+  User,
+  Activity,
 } from "lucide-react";
-import { FormHeader } from "../components/FormHeader";
-import { FormCard } from "../components/FormCard";
 import { OptionTree } from "../components/OptionTree";
-import { ClassificationRadio } from "../components/ClassificationRadio";
 
 function formatLocalDateTime(dateStr: string): string {
   if (!dateStr) return "";
@@ -54,6 +51,61 @@ function formatLocalDateTime(dateStr: string): string {
   });
 }
 
+const AUTO_CLASSIFICATION_MAP: Record<string, string> = {
+  serous_benign: "benign",
+  endometrioma_benign: "benign",
+  seromucinous_benign: "benign",
+  fibroma: "benign",
+  cellular_fibroma: "benign",
+  thecoma: "benign",
+  mature_teratoma: "benign",
+  serous_borderline: "borderline",
+  seromucinous_borderline: "borderline",
+  serous_carcinoma_low_grade: "malignant",
+  serous_carcinoma_high_grade: "malignant",
+  endometrioid_carcinoma: "malignant",
+  immature_teratoma: "malignant",
+  dysgerminoma: "malignant",
+  yolk_sac_tumor: "malignant",
+};
+
+function inferClientClassification(selectedIds: Set<string>, currentClassification?: string): string {
+  if (currentClassification && currentClassification !== "unspecified") {
+    return currentClassification;
+  }
+  for (const id of selectedIds) {
+    if (AUTO_CLASSIFICATION_MAP[id]) return AUTO_CLASSIFICATION_MAP[id];
+    if (id.includes("benign") || id.includes("lanh")) return "benign";
+    if (id.includes("borderline") || id.includes("giap_bien")) return "borderline";
+    if (id.includes("carcinoma") || id.includes("malignant") || id.includes("ac")) return "malignant";
+  }
+  return currentClassification || "unspecified";
+}
+
+function getSelectedDiagnosisList(pathologyField: any, selectedIds: Set<string>, otherTexts: Record<string, string>): string[] {
+  if (!pathologyField || !pathologyField.options) return [];
+  const results: string[] = [];
+  function recurse(opts: any[]) {
+    for (const opt of opts) {
+      if (selectedIds.has(opt.id)) {
+        let label = opt.label;
+        if (otherTexts[opt.id]) {
+          label += ` (${otherTexts[opt.id]})`;
+        }
+        results.push(label);
+      }
+      if (opt.children && Array.isArray(opt.children)) {
+        recurse(opt.children);
+      }
+    }
+  }
+  recurse(pathologyField.options);
+  if (results.length === 0 && otherTexts["pathology_other"]) {
+    results.push(otherTexts["pathology_other"]);
+  }
+  return results;
+}
+
 function extractAnswersTree(answers: any): { selectedIds: Set<string>; otherTexts: Record<string, string> } {
   const selectedIds = new Set<string>();
   const otherTexts: Record<string, string> = {};
@@ -71,6 +123,9 @@ function extractAnswersTree(answers: any): { selectedIds: Set<string>; otherText
   if (answers?.pathology?.selected && Array.isArray(answers.pathology.selected)) {
     walk(answers.pathology.selected);
   }
+  if (answers?.pathology?.other_text) {
+    otherTexts["pathology_other"] = answers.pathology.other_text;
+  }
 
   return { selectedIds, otherTexts };
 }
@@ -87,7 +142,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [submissionsPage, setSubmissionsPage] = useState<AdminSubmissionsPage | null>(null);
   const [page, setPage] = useState(1);
-  const [classificationFilter, setClassificationFilter] = useState<string>("");
+    const [searchTerm, setSearchTerm] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [isRealtime, setIsRealtime] = useState(true);
 
@@ -103,6 +158,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   // Clipboard copy state
   const [copiedUuid, setCopiedUuid] = useState<string | null>(null);
+  const [showFullWhoTree, setShowFullWhoTree] = useState(false);
 
   const handleCopyUuid = (uuid: string) => {
     navigator.clipboard.writeText(uuid);
@@ -134,7 +190,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleResyncGoogleSheets = async () => {
     if (
       !window.confirm(
-        "Bạn có muốn đồng bộ lại toàn bộ dữ liệu hiện tại sang Google Sheet không?\n(Bảng tính Google Sheet sẽ được cập nhật chính xác tuyệt đối theo CSDL)"
+        "Đối chiếu mã phiếu và bổ sung các phiếu còn thiếu lên Google Sheet?\nCác dòng hiện có sẽ được giữ lại."
       )
     ) {
       return;
@@ -142,7 +198,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setIsResyncing(true);
     try {
       const res = await resyncGoogleSheets(token);
-      alert(`Đồng bộ thành công! Hiện có ${res.count ?? 0} phiếu trên Google Sheet.`);
+      alert(`Đã đối chiếu ${res.count} phiếu trên Google Sheet. Bổ sung ${res.added_count ?? 0} phiếu còn thiếu.`);
     } catch (err: any) {
       alert(err.message || "Lỗi khi đồng bộ Google Sheet.");
     } finally {
@@ -155,8 +211,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     try {
       const [statsData, subsData] = await Promise.all([
         fetchAdminStats(token),
-        fetchAdminSubmissions(page, 20, token, {
-          classification: classificationFilter || undefined,
+        fetchAdminSubmissions(page, 50, token, {
+
         }),
       ]);
       setStats(statsData);
@@ -170,7 +226,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   useEffect(() => {
     loadData(true);
-  }, [page, classificationFilter]);
+  }, [page]);
 
   // Real-time polling effect every 3 seconds
   useEffect(() => {
@@ -181,7 +237,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isRealtime, page, classificationFilter, token]);
+  }, [isRealtime, page, token]);
 
   const handleLogoutClick = async () => {
     await adminLogout();
@@ -265,19 +321,103 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             Ác tính
           </span>
         );
+      case "unspecified":
       default:
-        return <span>{cls}</span>;
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 10px",
+              borderRadius: "20px",
+              fontSize: "13px",
+              fontWeight: "600",
+              backgroundColor: "#f1f5f9",
+              color: "#64748b",
+              border: "1px solid #cbd5e1",
+            }}
+          >
+            <span style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "#94a3b8" }} />
+            Chưa phân loại
+          </span>
+        );
     }
   };
 
-  // 1. PREVIEW MODE VIEW
+  // Helper function to render a report field
+  const renderField = (label: string, value: any, unit: string = "") => {
+    const displayVal =
+      value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "--";
+    const isEmpty = displayVal === "--";
+    return (
+      <div
+        style={{
+          padding: "10px 14px",
+          backgroundColor: "#f8fafc",
+          borderRadius: "8px",
+          border: "1px solid #e2e8f0",
+        }}
+      >
+        <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "600", marginBottom: "4px" }}>
+          {label}
+        </div>
+        <div style={{ fontSize: "14px", fontWeight: "700", color: isEmpty ? "#94a3b8" : "#0f172a" }}>
+          {displayVal}
+          {!isEmpty && unit ? ` ${unit}` : ""}
+        </div>
+      </div>
+    );
+  };
+
+  // Helper function to render section title
+  const renderSectionHeader = (roman: string, title: string) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        padding: "10px 16px",
+        backgroundColor: "#f1f5f9",
+        borderRadius: "8px",
+        marginBottom: "12px",
+        borderLeft: "4px solid #673ab7",
+      }}
+    >
+      <span
+        style={{
+          width: "24px",
+          height: "24px",
+          borderRadius: "6px",
+          backgroundColor: "#673ab7",
+          color: "#ffffff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: "800",
+          fontSize: "12px",
+        }}
+      >
+        {roman}
+      </span>
+      <span style={{ fontSize: "15px", fontWeight: "700", color: "#1e293b" }}>
+        {title}
+      </span>
+    </div>
+  );
+
+  // =========================================================================
+  // 1. CHẾ ĐỘ XEM CHI TIẾT ĐẦY ĐỦ BỆNH ÁN DÀNH CHO ADMIN
+  // =========================================================================
   if (previewData && formSchema) {
+    const c = previewData.detail.answers?.clinical_data || {};
     const { selectedIds, otherTexts } = extractAnswersTree(previewData.detail.answers);
     const pathologyField = formSchema.fields.find((f) => f.id === "pathology");
-    const classificationField = formSchema.fields.find((f) => f.id === "classification");
+    const effectiveClassification = inferClientClassification(selectedIds, previewData.detail.classification);
+    const selectedDiagnoses = getSelectedDiagnosisList(pathologyField, selectedIds, otherTexts);
 
     return (
-      <div style={{ minHeight: "100vh", backgroundColor: "var(--background)" }}>
+      <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", color: "#1e293b" }}>
         {/* Top Sticky Bar */}
         <div
           style={{
@@ -286,7 +426,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             zIndex: 9999,
             backgroundColor: "#5e35b1",
             color: "#ffffff",
-            padding: "14px 28px",
+            padding: "12px 24px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -298,8 +438,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div
               style={{
-                width: "40px",
-                height: "40px",
+                width: "38px",
+                height: "38px",
                 borderRadius: "8px",
                 backgroundColor: "rgba(255,255,255,0.2)",
                 display: "flex",
@@ -307,93 +447,466 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 justifyContent: "center",
               }}
             >
-              <Eye size={22} color="#ffffff" />
+              <FileText size={20} color="#ffffff" />
             </div>
             <div>
-              <div style={{ fontSize: "19px", fontWeight: "700", letterSpacing: "0.3px" }}>
-                XEM TRƯỚC PHIẾU KHẢO SÁT: {previewData.refCode}
+              <div style={{ fontSize: "17px", fontWeight: "700", letterSpacing: "0.3px" }}>
+                HỒ SƠ BỆNH ÁN & GIẢI PHẪU BỆNH
               </div>
-              <div style={{ fontSize: "14px", opacity: 0.9, marginTop: "2px" }}>
-                Thời gian gửi: {formatLocalDateTime(previewData.detail.created_at)} | UUID: {previewData.detail.submission_uuid}
+              <div style={{ fontSize: "13px", opacity: 0.9 }}>
+                BN: <strong>{c.ho_ten || "Chưa rõ tên"}</strong> | Số HS:{" "}
+                <strong>{c.so_hs || "--"}</strong> | Mã phiếu: <strong>{previewData.refCode}</strong> | Gửi lúc:{" "}
+                {formatLocalDateTime(previewData.detail.created_at)}
               </div>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setPreviewData(null)}
-            style={{
-              backgroundColor: "#ffffff",
-              color: "#5e35b1",
-              border: "none",
-              borderRadius: "8px",
-              padding: "10px 20px",
-              fontSize: "15px",
-              fontWeight: "700",
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-              transition: "transform 0.15s ease",
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.transform = "translateY(-1px)")}
-            onMouseOut={(e) => (e.currentTarget.style.transform = "none")}
-          >
-            <ArrowLeft size={18} />
-            <span>Quay lại Bảng điều khiển</span>
-          </button>
-        </div>
-
-        {/* Real User Survey Layout Pre-filled */}
-        <div className="form-container" style={{ paddingTop: "28px" }}>
-          <FormHeader
-            title={formSchema.title}
-            description={formSchema.description}
-            hasRequiredFields={false}
-          />
-
-          {pathologyField && (
-            <FormCard
-              id={pathologyField.id}
-              title={pathologyField.label}
-              required={false}
-            >
-              <OptionTree
-                options={pathologyField.options}
-                selectedIds={selectedIds}
-                otherTexts={otherTexts}
-                onToggle={() => {}}
-                onOtherTextChange={() => {}}
-              />
-            </FormCard>
-          )}
-
-          {classificationField && (
-            <FormCard
-              id={classificationField.id}
-              title={classificationField.label}
-              required={false}
-            >
-              <ClassificationRadio
-                options={classificationField.options}
-                selectedValue={previewData.detail.classification}
-                onChange={() => {}}
-              />
-            </FormCard>
-          )}
-
-          <div style={{ textAlign: "center", margin: "36px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <button
               type="button"
-              className="btn-submit"
+              onClick={() => window.print()}
+              style={{
+                backgroundColor: "rgba(255,255,255,0.15)",
+                color: "#ffffff",
+                border: "1px solid rgba(255,255,255,0.3)",
+                borderRadius: "8px",
+                padding: "8px 16px",
+                fontSize: "14px",
+                fontWeight: "600",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <Printer size={16} />
+              <span>In hồ sơ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPreviewData(null)}
+              style={{
+                backgroundColor: "#ffffff",
+                color: "#5e35b1",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 18px",
+                fontSize: "14px",
+                fontWeight: "700",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+              }}
+            >
+              <ArrowLeft size={16} />
+              <span>Quay lại Bảng điều khiển</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Content Body */}
+        <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "24px 20px 60px" }}>
+          {/* Hero Patient Summary Card */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "24px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+              marginBottom: "20px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "16px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+              <div
+                style={{
+                  width: "56px",
+                  height: "56px",
+                  borderRadius: "14px",
+                  background: "linear-gradient(135deg, #673ab7 0%, #4527a0 100%)",
+                  color: "#ffffff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "22px",
+                  fontWeight: "700",
+                }}
+              >
+                <User size={30} />
+              </div>
+              <div>
+                <div style={{ fontSize: "22px", fontWeight: "800", color: "#0f172a" }}>
+                  {c.ho_ten ? c.ho_ten.toUpperCase() : "CHƯA CÓ HỌ TÊN"}
+                </div>
+                <div style={{ fontSize: "14px", color: "#64748b", marginTop: "2px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span>Số hồ sơ: <strong style={{ color: "#0284c7" }}>{c.so_hs || "--"}</strong></span>
+                  <span>|</span>
+                  <span>Năm sinh: <strong>{c.nam_sinh || "--"}</strong> {c.tuoi_phau_thuat ? `(${c.tuoi_phau_thuat} tuổi)` : ""}</span>
+                  <span>|</span>
+                  <span>Năm khám: <strong>{c.nam_kham || "--"}</strong></span>
+                  <span>|</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    UUID: <code>{previewData.detail.submission_uuid.slice(0, 8)}...</code>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyUuid(previewData.detail.submission_uuid)}
+                      title="Sao chép toàn bộ mã UUID"
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: copiedUuid === previewData.detail.submission_uuid ? "#16a34a" : "#64748b" }}
+                    >
+                      {copiedUuid === previewData.detail.submission_uuid ? <Check size={14} /> : <Copy size={14} />}
+                    </button>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "600" }}>Phân loại u buồng trứng:</div>
+                <div style={{ marginTop: "4px" }}>{getClassificationBadge(effectiveClassification)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 1: Hành chính */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "20px",
+              border: "1px solid #e2e8f0",
+              marginBottom: "20px",
+            }}
+          >
+            {renderSectionHeader("I", "THÔNG TIN HÀNH CHÍNH & NHÂN KHẨU HỌC")}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+              {renderField("Số hồ sơ (Số HS)", c.so_hs)}
+              {renderField("Họ và tên bệnh nhân", c.ho_ten)}
+              {renderField("Năm sinh", c.nam_sinh)}
+              {renderField("Năm khám", c.nam_kham)}
+              {renderField("Tuổi khi phẫu thuật", c.tuoi_phau_thuat, "tuổi")}
+              {renderField("Địa chỉ", c.dia_chi)}
+              {renderField("Nghề nghiệp", c.nghe_nghiep)}
+            </div>
+          </div>
+
+          {/* Section 2: Tiền căn */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "20px",
+              border: "1px solid #e2e8f0",
+              marginBottom: "20px",
+            }}
+          >
+            {renderSectionHeader("II", "TIỀN CĂN & ĐẶC ĐIỂM LÂM SÀNG")}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+              {renderField("PARA", c.para)}
+              {renderField("Tình trạng kinh nguyệt", c.kinh_nguyet)}
+              {renderField("Thời điểm phát hiện UBT", c.thoi_diem_phat_hien)}
+              {renderField(
+                "Tiền căn phẫu thuật UBT",
+                c.tien_can_phau_thuat_ubt + (c.tien_can_phau_thuat_ubt_ghi_chu ? ` (${c.tien_can_phau_thuat_ubt_ghi_chu})` : "")
+              )}
+              {renderField(
+                "Tiền căn ung thư khác",
+                c.tien_can_ung_thu_khac + (c.tien_can_ung_thu_khac_ghi_chu ? ` (${c.tien_can_ung_thu_khac_ghi_chu})` : "")
+              )}
+              {renderField("Lạc nội mạc tử cung", c.tien_can_lac_nmtc)}
+              {renderField("Tình trạng có thai", c.co_thai)}
+              {renderField("UBT xoắn", c.ubt_xoan)}
+              {renderField("UBT vỡ", c.ubt_vo)}
+              {renderField("UBT nhiễm trùng", c.ubt_nhiem_trung)}
+            </div>
+          </div>
+
+          {/* Section 3: Xét nghiệm */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "20px",
+              border: "1px solid #e2e8f0",
+              marginBottom: "20px",
+            }}
+          >
+            {renderSectionHeader("III", "XÉT NGHIỆM HUYẾT THANH (DẤU ẤN KHỐI U)")}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
+              {renderField("CA 125", c.ca_125, "U/mL")}
+              {renderField("HE4", c.he4, "pmol/L")}
+              {renderField("ROMA", c.roma, "%")}
+              {renderField("AFP", c.afp, "ng/mL")}
+              {renderField("beta hCG", c.beta_hcg, "mUI/mL")}
+            </div>
+          </div>
+
+          {/* Section 4: Siêu âm */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "20px",
+              border: "1px solid #e2e8f0",
+              marginBottom: "20px",
+            }}
+          >
+            {renderSectionHeader("IV", "ĐẶC ĐIỂM HÌNH ẢNH HỌC SIÊU ÂM")}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "12px",
+                marginBottom: "16px",
+              }}
+            >
+              {renderField("Số lượng u", c.sa_so_luong_u)}
+              {renderField("Mô buồng trứng", c.sa_mo_buong_trung)}
+              {renderField("Phân loại u", c.sa_phan_loai_u)}
+              {renderField("Phản âm", Array.isArray(c.sa_phan_am) ? c.sa_phan_am.join(", ") : c.sa_phan_am)}
+              {renderField("Kích thước u", c.sa_kich_thuoc_u, "mm")}
+              {renderField("Bờ ngoài", c.sa_bo_ngoai)}
+              {renderField("Bờ trong", c.sa_bo_trong)}
+              {renderField("Số lượng thùy", c.sa_so_luong_thuy)}
+              {renderField("Kích thước phần đặc", c.sa_kich_thuoc_phan_dac, "mm")}
+              {renderField("Bóng lưng", c.sa_bong_lung)}
+              {renderField("Nang trong phần đặc", c.sa_nang_trong_phan_dac)}
+              {renderField("Chồi", c.sa_choi)}
+              {renderField("Tăng sinh mạch máu", c.sa_tang_sinh_mach_mau)}
+              {renderField("Dịch ổ bụng", c.sa_dich_o_bung)}
+              {renderField(
+                "Tổn thương NMTC",
+                c.sa_ton_thuong_nmtc + (c.sa_ton_thuong_nmtc_ghi_chu ? ` (${c.sa_ton_thuong_nmtc_ghi_chu})` : "")
+              )}
+              {renderField("O-RADS (Siêu âm)", c.sa_orads)}
+            </div>
+
+            {/* Khung IOTA ADNEX 6 mục con */}
+            <div
+              style={{
+                backgroundColor: "#f5f3ff",
+                border: "1.5px solid #ddd6fe",
+                borderRadius: "10px",
+                padding: "16px",
+              }}
+            >
+              <div style={{ fontSize: "14px", fontWeight: "700", color: "#673ab7", marginBottom: "12px" }}>
+                🎯 MÔ HÌNH DỰ ĐOÁN IOTA ADNEX (6 MỤC THÀNH PHẦN)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
+                {renderField("Benign tumor", c.iota_benign, "%")}
+                {renderField("Malignant", c.iota_malignant, "%")}
+                {renderField("Borderline", c.iota_borderline, "%")}
+                {renderField("Stage I", c.iota_stage1, "%")}
+                {renderField("Stage II-IV", c.iota_stage2_4, "%")}
+                {renderField("Metastatic", c.iota_metastatic, "%")}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 5: MRI */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "20px",
+              border: "1px solid #e2e8f0",
+              marginBottom: "20px",
+            }}
+          >
+            {renderSectionHeader("V", "ĐẶC ĐIỂM CỘNG HƯỞNG TỪ (MRI)")}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "12px",
+                marginBottom: "14px",
+              }}
+            >
+              {renderField("Mô buồng trứng", c.mri_mo_buong_trung)}
+              {renderField("Số lượng u", c.mri_so_luong_u)}
+              {renderField("Dạng tổn thương", c.mri_dang_ton_thuong)}
+              {renderField("Kích thước u", c.mri_kich_thuoc_u, "mm")}
+              {renderField(
+                "Dịch nang (T1w/T2w)",
+                c.mri_dich_nang || `T1w: ${c.mri_dich_nang_t1w || "--"}, T2w: ${c.mri_dich_nang_t2w || "--"}`
+              )}
+              {renderField("Thành phần mỡ", c.mri_thanh_phan_mo)}
+              {renderField("Phần đặc", c.mri_phan_dac)}
+              {renderField("Kích thước phần đặc", c.mri_kich_thuoc_phan_dac, "mm")}
+              {renderField("Khuếch tán", c.mri_khuech_tan)}
+              {renderField("Ngấm thuốc tương phản từ", c.mri_ngam_thuoc)}
+              {renderField("Hạch", c.mri_hach)}
+              {renderField("Dịch ổ bụng", c.mri_dich_o_bung)}
+              {renderField("Tổn thương cơ quan khác", c.mri_ton_thuong_co_quan_khac)}
+            </div>
+            {renderField("Kết luận hình ảnh học MRI", c.mri_ket_luan)}
+          </div>
+
+          {/* Section 6: Phẫu thuật & GPB WHO */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "14px",
+              padding: "20px",
+              border: "1px solid #e2e8f0",
+              marginBottom: "24px",
+            }}
+          >
+            {renderSectionHeader("VI", "PROTOCOL PHẪU THUẬT & GIẢI PHẪU BỆNH THEO WHO")}
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "12px",
+                marginBottom: "20px",
+              }}
+            >
+              {renderField("Chẩn đoán trước phẫu thuật", c.pt_chan_doan_truoc)}
+              {renderField("Chẩn đoán sau phẫu thuật", c.pt_chan_doan_sau)}
+              {renderField("Phương pháp phẫu thuật", c.pt_phuong_phap)}
+              {renderField("Sinh thiết lạnh", c.pt_sinh_thiet_lanh === "Có" && c.pt_sinh_thiet_lanh_ghi_chu ? `Có (${c.pt_sinh_thiet_lanh_ghi_chu})` : c.pt_sinh_thiet_lanh)}
+              {renderField("Mô tả tổn thương phẫu thuật", c.pt_ton_thuong || c.pt_mo_ta)}
+              {renderField("Dịch ổ bụng khi phẫu thuật", c.pt_dich_o_bung)}
+            </div>
+
+            {/* Thẻ Kết quả Chẩn đoán GPB WHO nổi bật */}
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1.5px solid #cbd5e1",
+                borderRadius: "12px",
+                padding: "20px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: "14px",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                  borderBottom: "1px solid #e2e8f0",
+                  paddingBottom: "12px",
+                }}
+              >
+                <div style={{ fontSize: "15px", fontWeight: "700", color: "#673ab7", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span>🔬 KẾT QUẢ PHÂN LOẠI GIẢI PHẪU BỆNH (WHO)</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "13px", color: "#64748b", fontWeight: "600" }}>Bản chất u:</span>
+                  {getClassificationBadge(effectiveClassification)}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "12.5px", fontWeight: "600", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>
+                  Chẩn đoán mô bệnh học được chọn:
+                </div>
+                {selectedDiagnoses.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {selectedDiagnoses.map((diag, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          background: "#ffffff",
+                          border: "1.5px solid #a855f7",
+                          borderRadius: "8px",
+                          padding: "12px 16px",
+                          fontSize: "16px",
+                          fontWeight: "700",
+                          color: "#1e1b4b",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                        }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "22px", height: "22px", borderRadius: "50%", background: "#ede9fe", color: "#7c3aed", fontSize: "13px" }}>✓</span>
+                        <span>{diag}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ color: "#94a3b8", fontStyle: "italic", fontSize: "14.5px" }}>
+                    Chưa chọn kết quả chẩn đoán GPB
+                  </div>
+                )}
+              </div>
+
+              {/* Tùy chọn thu gọn / mở rộng danh mục 15 nhóm bệnh WHO */}
+              {pathologyField && (
+                <div style={{ marginTop: "14px", paddingTop: "12px", borderTop: "1px dashed #e2e8f0" }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowFullWhoTree(!showFullWhoTree)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "#673ab7",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                      padding: "4px 0",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>{showFullWhoTree ? "▲ Thu gọn danh mục 15 mặt bệnh WHO" : "▼ Xem đối chiếu toàn bộ 15 mặt bệnh WHO"}</span>
+                  </button>
+
+                  {showFullWhoTree && (
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        pointerEvents: "none",
+                        opacity: 0.9,
+                        background: "#ffffff",
+                        padding: "14px",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <OptionTree
+                        options={pathologyField.options}
+                        selectedIds={selectedIds}
+                        otherTexts={otherTexts}
+                        onToggle={() => {}}
+                        onOtherTextChange={() => {}}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Back Button */}
+          <div style={{ textAlign: "center" }}>
+            <button
+              type="button"
               onClick={() => setPreviewData(null)}
               style={{
                 cursor: "pointer",
-                padding: "12px 28px",
+                padding: "12px 32px",
                 fontSize: "16px",
+                fontWeight: "700",
                 borderRadius: "8px",
                 backgroundColor: "#5e35b1",
+                color: "#ffffff",
+                border: "none",
+                boxShadow: "0 4px 12px rgba(94, 53, 177, 0.3)",
               }}
             >
               ← Quay lại Bảng điều khiển
@@ -413,6 +926,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const benignPct = totalClass > 0 ? ((stats?.by_classification["benign"] || 0) / totalClass) * 100 : 0;
   const borderlinePct = totalClass > 0 ? ((stats?.by_classification["borderline"] || 0) / totalClass) * 100 : 0;
   const malignantPct = totalClass > 0 ? ((stats?.by_classification["malignant"] || 0) / totalClass) * 100 : 0;
+
+  // Filter items by search term
+  const filteredSubmissions = (submissionsPage?.items || []).filter((sub) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase();
+    const ref = (sub.reference_code || "").toLowerCase();
+    const hs = (sub.so_hs || "").toLowerCase();
+    const name = (sub.ho_ten || "").toLowerCase();
+    const uuid = (sub.submission_uuid || "").toLowerCase();
+    return ref.includes(term) || hs.includes(term) || name.includes(term) || uuid.includes(term);
+  });
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", color: "#1e293b" }}>
@@ -555,8 +1079,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 e.currentTarget.style.backgroundColor = "#ffffff";
               }}
             >
-              <LogOut size={15} />
-              <span>Đăng xuất</span>
+              <span>[→ Đăng xuất</span>
             </button>
           </div>
         </div>
@@ -564,61 +1087,51 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
       {/* 2. Main Dashboard Content */}
       <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "28px 24px" }}>
-        {/* Title Bar & Unified Action Buttons */}
+        {/* Page Title & Action Bar */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-start",
-            marginBottom: "28px",
+            alignItems: "flex-end",
+            marginBottom: "24px",
             flexWrap: "wrap",
-            gap: "20px",
+            gap: "16px",
           }}
         >
           <div>
-            <h1
-              style={{
-                fontSize: "26px",
-                fontWeight: "700",
-                color: "#0f172a",
-                margin: "0 0 6px 0",
-                letterSpacing: "0.2px",
-              }}
-            >
+            <h1 style={{ fontSize: "28px", fontWeight: "800", color: "#0f172a", margin: 0, letterSpacing: "-0.5px" }}>
               Bảng Điều Khiển Dữ Liệu Nghiên Cứu
             </h1>
-            <p style={{ fontSize: "15px", color: "#64748b", margin: 0 }}>
+            <p style={{ margin: "6px 0 0 0", color: "#64748b", fontSize: "15px" }}>
               Giám sát tiến độ thu thập phiếu, xuất dữ liệu chuẩn thống kê và đồng bộ Google Sheets
             </p>
           </div>
 
-          {/* Unified Clean Action Toolbar */}
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             {/* Open Google Sheet Button */}
             <a
-              href="https://docs.google.com/spreadsheets/d/1GQRr6Ogq5-mX8WR0RB22k-BlychLrNSXrK4wKPcDxgY/edit"
+              href="https://docs.google.com/spreadsheets/d/1GQRr6Ogq5-mX8WR0RB22k-BlychLrNSXrK4wKPcDxgY/edit?gid=0#gid=0"
               target="_blank"
-              rel="noopener noreferrer"
+              rel="noreferrer"
               style={{
-                textDecoration: "none",
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
-                backgroundColor: "#0f9d58",
+                backgroundColor: "#16a34a",
                 color: "#ffffff",
-                padding: "9px 18px",
+                padding: "9px 16px",
                 borderRadius: "8px",
+                textDecoration: "none",
                 fontSize: "14px",
                 fontWeight: "600",
-                boxShadow: "0 2px 6px rgba(15, 157, 88, 0.25)",
+                boxShadow: "0 2px 6px rgba(22, 163, 74, 0.25)",
                 transition: "all 0.15s ease",
               }}
-              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#0b8043")}
-              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#0f9d58")}
+              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#15803d")}
+              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#16a34a")}
             >
-              <FileSpreadsheet size={18} />
-              <span>Mở Google Sheet</span>
-              <ExternalLink size={14} style={{ opacity: 0.8 }} />
+              <FileText size={18} />
+              <span>Mở Google Sheet ↗</span>
             </a>
 
             {/* Resync Button */}
@@ -626,40 +1139,33 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               type="button"
               onClick={handleResyncGoogleSheets}
               disabled={isResyncing}
-              title="Đồng bộ lại toàn bộ dữ liệu hiện tại sang Google Sheet"
+              title="Đồng bộ lại toàn bộ dữ liệu CSDL sang Google Sheets"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
                 backgroundColor: "#ffffff",
-                color: "#15803d",
-                border: "1.5px solid #22c55e",
+                color: "#16a34a",
+                border: "1.5px solid #16a34a",
                 padding: "8px 16px",
                 borderRadius: "8px",
                 fontSize: "14px",
                 fontWeight: "600",
                 cursor: isResyncing ? "not-allowed" : "pointer",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
                 transition: "all 0.15s ease",
               }}
-              onMouseOver={(e) => {
-                if (!isResyncing) e.currentTarget.style.backgroundColor = "#f0fdf4";
-              }}
-              onMouseOut={(e) => {
-                if (!isResyncing) e.currentTarget.style.backgroundColor = "#ffffff";
-              }}
+              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#f0fdf4")}
+              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#ffffff")}
             >
-              <RefreshCw size={16} className={isResyncing ? "animate-spin" : ""} />
+              <RefreshCw size={17} className={isResyncing ? "animate-spin" : ""} />
               <span>{isResyncing ? "Đang đồng bộ..." : "Đồng bộ lại Sheet"}</span>
             </button>
 
-            {/* Export CSV Button */}
+            {/* Export CSV / Excel */}
             <a
               href={getExportCsvUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
+              download
               style={{
-                textDecoration: "none",
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
@@ -667,6 +1173,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 color: "#ffffff",
                 padding: "9px 18px",
                 borderRadius: "8px",
+                textDecoration: "none",
                 fontSize: "14px",
                 fontWeight: "600",
                 boxShadow: "0 2px 6px rgba(103, 58, 183, 0.25)",
@@ -702,7 +1209,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                transition: "transform 0.15s ease, box-shadow 0.15s ease",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
@@ -747,7 +1253,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                transition: "transform 0.15s ease, box-shadow 0.15s ease",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
@@ -798,71 +1303,28 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 <div style={{ fontSize: "13px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                   Phân bố Bệnh học (Lành / Ác)
                 </div>
-                <div
-                  style={{
-                    width: "36px",
-                    height: "36px",
-                    borderRadius: "10px",
-                    backgroundColor: "#fef3c7",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#d97706",
-                  }}
-                >
-                  <Activity size={20} />
+                <div style={{ width: "32px", height: "32px", borderRadius: "8px", backgroundColor: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", color: "#d97706" }}>
+                  <Activity size={18} />
                 </div>
               </div>
 
-              {/* Badges row */}
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: "75px",
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    backgroundColor: "#f0fdf4",
-                    border: "1px solid #bbf7d0",
-                    textAlign: "center",
-                  }}
-                >
+              {/* Badges Count */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "14px" }}>
+                <div style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0", padding: "8px", borderRadius: "8px", textAlign: "center" }}>
                   <div style={{ fontSize: "12px", color: "#166534", fontWeight: "600" }}>Lành</div>
-                  <div style={{ fontSize: "18px", fontWeight: "800", color: "#15803d" }}>
+                  <div style={{ fontSize: "20px", fontWeight: "800", color: "#16a34a" }}>
                     {stats.by_classification["benign"] || 0}
                   </div>
                 </div>
-
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: "75px",
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    backgroundColor: "#fffbeb",
-                    border: "1px solid #fde68a",
-                    textAlign: "center",
-                  }}
-                >
+                <div style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a", padding: "8px", borderRadius: "8px", textAlign: "center" }}>
                   <div style={{ fontSize: "12px", color: "#92400e", fontWeight: "600" }}>Giáp biên</div>
-                  <div style={{ fontSize: "18px", fontWeight: "800", color: "#b45309" }}>
+                  <div style={{ fontSize: "20px", fontWeight: "800", color: "#d97706" }}>
                     {stats.by_classification["borderline"] || 0}
                   </div>
                 </div>
-
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: "75px",
-                    padding: "8px 10px",
-                    borderRadius: "8px",
-                    backgroundColor: "#fef2f2",
-                    border: "1px solid #fecaca",
-                    textAlign: "center",
-                  }}
-                >
+                <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", padding: "8px", borderRadius: "8px", textAlign: "center" }}>
                   <div style={{ fontSize: "12px", color: "#991b1b", fontWeight: "600" }}>Ác tính</div>
-                  <div style={{ fontSize: "18px", fontWeight: "800", color: "#b91c1c" }}>
+                  <div style={{ fontSize: "20px", fontWeight: "800", color: "#dc2626" }}>
                     {stats.by_classification["malignant"] || 0}
                   </div>
                 </div>
@@ -920,35 +1382,39 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               )}
             </div>
 
-            {/* Filters and Refresh */}
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ fontSize: "14px", color: "#64748b", fontWeight: "500" }}>Lọc phân loại:</span>
-                <select
-                  value={classificationFilter}
-                  onChange={(e) => {
-                    setClassificationFilter(e.target.value);
-                    setPage(1);
-                  }}
+            {/* Search, Filter, and Refresh */}
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              {/* Search input */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  backgroundColor: "#f8fafc",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "8px",
+                  padding: "0 10px",
+                }}
+              >
+                <Search size={16} color="#94a3b8" />
+                <input
+                  type="text"
+                  placeholder="Tìm Số HS, Họ tên, Mã phiếu..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   style={{
-                    padding: "7px 14px",
-                    borderRadius: "8px",
-                    border: "1px solid #cbd5e1",
-                    fontSize: "14px",
-                    fontWeight: "500",
-                    color: "#334155",
-                    backgroundColor: "#ffffff",
-                    cursor: "pointer",
+                    border: "none",
                     outline: "none",
+                    backgroundColor: "transparent",
+                    padding: "7px 8px",
+                    fontSize: "13.5px",
+                    width: "210px",
+                    color: "#1e293b",
                   }}
-                >
-                  <option value="">Tất cả phân loại</option>
-                  <option value="benign">Lành tính</option>
-                  <option value="borderline">Giáp biên ác</option>
-                  <option value="malignant">Ác tính</option>
-                </select>
+                />
               </div>
 
+
+              {/* Refresh button */}
               <button
                 type="button"
                 onClick={() => loadData(true)}
@@ -986,12 +1452,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             >
               <thead>
                 <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#64748b" }}>
-                  <th style={{ padding: "14px 18px", fontWeight: "700" }}>Mã phiếu</th>
-                  <th style={{ padding: "14px 18px", fontWeight: "700" }}>Phân loại</th>
-                  <th style={{ padding: "14px 18px", fontWeight: "700" }}>Phiên bản</th>
-                  <th style={{ padding: "14px 18px", fontWeight: "700" }}>Thời gian gửi</th>
-                  <th style={{ padding: "14px 18px", fontWeight: "700" }}>Mã định danh (UUID)</th>
-                  <th style={{ padding: "14px 18px", fontWeight: "700", textAlign: "center" }}>Thao tác</th>
+                  <th style={{ padding: "14px 16px", fontWeight: "700" }}>Mã phiếu</th>
+                  <th style={{ padding: "14px 16px", fontWeight: "700" }}>Số HS</th>
+                  <th style={{ padding: "14px 16px", fontWeight: "700" }}>Họ và tên bệnh nhân</th>
+                  <th style={{ padding: "14px 16px", fontWeight: "700" }}>Năm sinh (Tuổi)</th>
+                  <th style={{ padding: "14px 16px", fontWeight: "700" }}>Thời gian gửi</th>
+                  <th style={{ padding: "14px 16px", fontWeight: "700", textAlign: "center" }}>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
@@ -1002,8 +1468,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       <div>Đang tải dữ liệu khảo sát...</div>
                     </td>
                   </tr>
-                ) : submissionsPage && submissionsPage.items.length > 0 ? (
-                  submissionsPage.items.map((sub, index) => (
+                ) : filteredSubmissions.length > 0 ? (
+                  filteredSubmissions.map((sub, index) => (
                     <tr
                       key={sub.id}
                       style={{
@@ -1015,7 +1481,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       onMouseOut={(e) => (e.currentTarget.style.backgroundColor = index % 2 === 0 ? "#ffffff" : "#fafafa")}
                     >
                       {/* Mã phiếu */}
-                      <td style={{ padding: "14px 18px" }}>
+                      <td style={{ padding: "14px 16px" }}>
                         <span
                           style={{
                             padding: "4px 10px",
@@ -1031,85 +1497,70 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </span>
                       </td>
 
-                      {/* Phân loại */}
-                      <td style={{ padding: "14px 18px" }}>
-                        {getClassificationBadge(sub.classification)}
+                      {/* Số HS */}
+                      <td style={{ padding: "14px 16px" }}>
+                        {sub.so_hs ? (
+                          <span
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              backgroundColor: "#e0f2fe",
+                              color: "#0369a1",
+                              fontWeight: "700",
+                              fontSize: "13.5px",
+                            }}
+                          >
+                            {sub.so_hs}
+                          </span>
+                        ) : (
+                          <span style={{ color: "#94a3b8" }}>--</span>
+                        )}
                       </td>
 
-                      {/* Phiên bản */}
-                      <td style={{ padding: "14px 18px", color: "#64748b", fontWeight: "500" }}>
-                        <span
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: "4px",
-                            backgroundColor: "#f1f5f9",
-                            fontSize: "13px",
-                          }}
-                        >
-                          v{sub.form_version}
-                        </span>
+                      {/* Họ và tên BN */}
+                      <td style={{ padding: "14px 16px" }}>
+                        {sub.ho_ten ? (
+                          <div style={{ fontWeight: "700", color: "#0f172a", fontSize: "14.5px" }}>
+                            {sub.ho_ten.toUpperCase()}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#94a3b8", fontStyle: "italic" }}>Chưa có tên</span>
+                        )}
                       </td>
 
-                      {/* Thời gian */}
-                      <td style={{ padding: "14px 18px", color: "#475569", whiteSpace: "nowrap" }}>
+                      {/* Năm sinh / Tuổi */}
+                      <td style={{ padding: "14px 16px", color: "#334155" }}>
+                        {sub.nam_sinh ? (
+                          <span style={{ fontWeight: "600" }}>
+                            {sub.nam_sinh} {sub.tuoi ? `(${sub.tuoi} tuổi)` : ""}
+                          </span>
+                        ) : (
+                          <span style={{ color: "#94a3b8" }}>--</span>
+                        )}
+                      </td>
+
+
+                      {/* Thời gian gửi */}
+                      <td style={{ padding: "14px 16px", color: "#475569", whiteSpace: "nowrap" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                           <Clock size={14} color="#94a3b8" />
                           <span>{formatLocalDateTime(sub.created_at)}</span>
                         </div>
                       </td>
 
-                      {/* UUID với nút Copy gọn gàng */}
-                      <td style={{ padding: "14px 18px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <code
-                            style={{
-                              fontSize: "13px",
-                              backgroundColor: "#f1f5f9",
-                              padding: "3px 8px",
-                              borderRadius: "4px",
-                              color: "#475569",
-                              maxWidth: "180px",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              display: "inline-block",
-                            }}
-                            title={sub.submission_uuid}
-                          >
-                            {sub.submission_uuid.slice(0, 13)}...
-                          </code>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyUuid(sub.submission_uuid)}
-                            title="Sao chép toàn bộ mã UUID"
-                            style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              padding: "4px",
-                              color: copiedUuid === sub.submission_uuid ? "#16a34a" : "#94a3b8",
-                              display: "flex",
-                              alignItems: "center",
-                            }}
-                          >
-                            {copiedUuid === sub.submission_uuid ? <Check size={15} /> : <Copy size={15} />}
-                          </button>
-                        </div>
-                      </td>
-
-                      {/* Hành động */}
-                      <td style={{ padding: "14px 18px", textAlign: "center", whiteSpace: "nowrap" }}>
+                      {/* Thao tác */}
+                      <td style={{ padding: "14px 16px", textAlign: "center", whiteSpace: "nowrap" }}>
                         <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
-                          {/* Preview Button */}
+                          {/* Xem chi tiết Button */}
                           <button
                             type="button"
                             onClick={() => handleOpenPreview(sub.id, sub.reference_code)}
-                            title="Xem lại toàn bộ phiếu trả lời trực quan"
+                            title="Xem lại toàn bộ hồ sơ bệnh án & GPB"
                             disabled={previewLoading}
                             style={{
-                              backgroundColor: "#eff6ff",
-                              border: "1px solid #bfdbfe",
-                              color: "#1d4ed8",
+                              backgroundColor: "#673ab7",
+                              border: "none",
+                              color: "#ffffff",
                               cursor: previewLoading ? "not-allowed" : "pointer",
                               padding: "6px 14px",
                               borderRadius: "6px",
@@ -1118,13 +1569,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               gap: "6px",
                               fontSize: "13px",
                               fontWeight: "600",
+                              boxShadow: "0 2px 4px rgba(103, 58, 183, 0.2)",
                               transition: "all 0.15s ease",
                             }}
-                            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#dbeafe")}
-                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#eff6ff")}
+                            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#5e35b1")}
+                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#673ab7")}
                           >
                             <Eye size={15} />
-                            <span>Preview</span>
+                            <span>Xem chi tiết</span>
                           </button>
 
                           {/* Delete Button */}
@@ -1164,10 +1616,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <td colSpan={6} style={{ padding: "48px 24px", textAlign: "center", color: "#64748b" }}>
                       <FileText size={36} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
                       <div style={{ fontSize: "16px", fontWeight: "600", color: "#334155", marginBottom: "4px" }}>
-                        Chưa có phiếu khảo sát nào
+                        {searchTerm ? "Không tìm thấy phiếu nào phù hợp" : "Chưa có phiếu khảo sát nào"}
                       </div>
                       <div style={{ fontSize: "14px" }}>
-                        {classificationFilter ? "Không có phiếu nào thuộc phân loại này." : "Dữ liệu sẽ tự động xuất hiện ngay khi có người dùng hoàn thành khảo sát."}
+                        {searchTerm
+                          ? `Không có kết quả nào khớp với "${searchTerm}". Vui lòng thử từ khóa khác.`
+                          : "Dữ liệu sẽ tự động xuất hiện ngay khi có người dùng hoàn thành khảo sát."}
                       </div>
                     </td>
                   </tr>
