@@ -1,31 +1,50 @@
 @echo off
+cd /d "%~dp0"
 chcp 65001 > nul
+
 echo ====================================================================
-echo    KHỞI CHẠY HỆ THỐNG KHẢO SÁT GIẢI PHẪU BỆNH U BUỒNG TRỨNG (DEV)
+echo    KHOI CHAY HE THONG KHAO SAT GIAI PHAU BENH U BUONG TRUNG
 echo ====================================================================
 echo.
 
-echo [1/3] Đang kiểm tra và khởi tạo Cơ sở dữ liệu...
-cd backend
-python init_local_db.py
-cd ..
+set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
+if not exist "%PYTHON_EXE%" (
+    echo Chua co .venv. Hay tao moi truong va cai dependencies theo README.md.
+    exit /b 1
+)
+if not exist "%~dp0backend\.env" (
+    echo Chua co backend\.env. Hay cau hinh theo README.md truoc khi chay.
+    exit /b 1
+)
+if not exist "%~dp0frontend\node_modules\vite\bin\vite.js" (
+    echo Chua cai frontend dependencies. Hay chay npm.cmd ci trong frontend.
+    exit /b 1
+)
+
+echo [1/3] Khoi tao co so du lieu...
+cd /d "%~dp0backend"
+"%PYTHON_EXE%" init_local_db.py
+if errorlevel 1 exit /b 1
+cd /d "%~dp0"
 
 echo.
-echo [2/3] Đang khởi động Backend FastAPI (cổng 8000)...
-start "Ovarian Survey - Backend (FastAPI)" cmd /k "cd backend && uvicorn app.main:app --reload --port 8000"
+echo [2/3] Dang khoi dong Backend FastAPI tai cong 8000...
+start "Backend FastAPI" /D "%~dp0backend" cmd /k ""%PYTHON_EXE%" -m uvicorn app.main:app --reload --port 8000"
 
 echo.
-echo [3/3] Đang khởi động Frontend React/Vite (cổng 5173)...
-start "Ovarian Survey - Frontend (React/Vite)" cmd /k "cd frontend && npm run dev"
+echo [3/3] Dang khoi dong Frontend Vite tai cong 5173...
+start "Frontend Vite" /D "%~dp0frontend" cmd /k "npm.cmd run dev -- --host 127.0.0.1 --strictPort"
 
 echo.
 echo ====================================================================
-echo  CẢ HAI DỊCH VỤ ĐANG ĐƯỢC CHẠY TRONG CỬA SỔ RIÊNG!
+echo  DA GUI LENH KHOI DONG. XEM LOG TRONG HAI CUA SO VA KIEM TRA URL BEN DUOI.
 echo.
-echo  👉 Khảo sát (Người dùng):   http://localhost:5173/
-echo  👉 Trang Quản trị (Admin):  http://localhost:5173/admin
-echo     (Tài khoản: admin / Mật khẩu: admin123)
-echo  👉 API Swagger Docs:        http://localhost:8000/docs
+echo  - Form khao sat:     http://localhost:5173/
+echo  - Quan tri Admin:    http://localhost:5173/admin
+echo    (Tai khoan: admin / Mat khau: admin123)
+echo  - API Docs Swagger:  http://localhost:8000/docs
 echo ====================================================================
-timeout /t 3 > nul
+echo.
+echo Dang mo trinh duyet...
+ping 127.0.0.1 -n 4 > nul
 start http://localhost:5173/

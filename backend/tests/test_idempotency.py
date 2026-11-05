@@ -9,7 +9,7 @@ def test_duplicate_same_uuid_same_payload_returns_existing(client):
         "answers": {
             "pathology": {
                 "selected": [
-                    {"id": "serous_benign"}
+                    {"id": "serous_cystadenoma_8441_0"}
                 ]
             },
             "classification": "benign"
@@ -37,7 +37,7 @@ def test_duplicate_same_uuid_different_payload_conflict_409(client):
         "form_version": 1,
         "answers": {
             "pathology": {
-                "selected": [{"id": "serous_benign"}]
+                "selected": [{"id": "serous_cystadenoma_8441_0"}]
             },
             "classification": "benign"
         }
@@ -48,7 +48,7 @@ def test_duplicate_same_uuid_different_payload_conflict_409(client):
         "form_version": 1,
         "answers": {
             "pathology": {
-                "selected": [{"id": "serous_borderline"}]  # different selection!
+                "selected": [{"id": "serous_borderline_8442_1"}]  # different selection!
             },
             "classification": "borderline"
         }

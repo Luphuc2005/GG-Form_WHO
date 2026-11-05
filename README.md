@@ -1,135 +1,80 @@
-# WHO Ovarian Tumor Pathology Survey Web System
-### Hệ thống Khảo sát Giải phẫu bệnh U buồng trứng theo WHO
+# Hệ thống thu thập bệnh án và giải phẫu bệnh u buồng trứng
 
-Hệ thống ứng dụng web chuyên dụng thay thế Google Forms, phục vụ nghiên cứu và khảo sát y khoa chuyên môn về **Phân loại giải phẫu bệnh của U buồng trứng theo WHO**.
+Ứng dụng React/TypeScript và FastAPI phục vụ nhập phiếu nghiên cứu, quản trị dữ liệu, xuất CSV và đồng bộ Google Sheets. Database local dùng SQLite; triển khai Docker dùng PostgreSQL 16 và Nginx.
 
-Hệ thống được thiết kế với kiến trúc **Client-Driven Form Engine** và **Stateless Backend**, đáp ứng dung lượng lưu trữ `>= 1.000.000 submissions` mà không làm quá tải tài nguyên máy chủ.
+## Chức năng hiện tại
 
----
+- Biểu mẫu tổng hợp tại `/`: hành chính, tiền sử/lâm sàng, dấu ấn sinh học, siêu âm, MRI, phẫu thuật và kết quả GPB theo WHO.
+- Lưu nháp trong `sessionStorage`; nút **Xóa tất cả thông tin** ở đầu phiếu xóa nội dung đang nhập, giữ nguyên phiếu đã gửi.
+- `/admin`: thống kê, danh sách và chi tiết phiếu, xuất CSV, xóa phiếu và đối chiếu Google Sheets.
+- `/develop`: chỉnh sửa và xem trước schema GPB. Các trường lâm sàng của trang tổng hợp được khai báo riêng trong `ComprehensiveFormPage.tsx`.
+- API kiểm tra UUID và hash nội dung để xử lý yêu cầu gửi lại. Trang tổng hợp hiện sinh UUID mới cho mỗi lần bấm gửi.
+- CSV có tiêu đề tiếng Việt, dữ liệu lâm sàng theo cột, kết quả WHO gộp một cột và UTF-8 BOM để mở trong Excel.
 
-## 🌟 ĐẶC ĐIỂM NỔI BẬT
+## Chạy local trên Windows
 
-1. **UX Thân quen tương tự Google Forms**:
-   - Giao diện dạng thẻ trắng tinh giản trên nền tím nhạt, căn giữa màn hình (tối đa 760px), tối ưu hiển thị trên Desktop, Tablet và Smartphone (375px - 1440px).
-   - Tương tác chạm thân thiện với vùng bấm tối thiểu 44px trên thiết bị di động.
+Yêu cầu Python 3.12+ và Node.js 20+. Chạy tại thư mục repository:
 
-2. **Cơ chế Cha - Con Động Tức thì (In-Place Tree Branching)**:
-   - Khi chưa chọn cha: Các lựa chọn con hoàn toàn không hiển thị.
-   - Khi chọn cha: Các lựa chọn con xuất hiện **ngay bên dưới** với hiệu ứng trượt êm ái, thụt lề 28px rõ ràng kèm đường dẫn phân cấp trực quan. Không cuộn trang, không reload, không chuyển section.
-   - Khi bỏ chọn cha: Toàn bộ cây con đệ quy biến mất ngay lập tức và toàn bộ giá trị đã chọn trước đó của các nút con được xóa sạch.
-   - Khi chọn mục "Khác": Ô nhập văn bản "Vui lòng ghi rõ" hiển thị ngay bên dưới; bỏ chọn sẽ tự động xóa nội dung.
-
-3. **Toàn bộ Logic biểu mẫu xử lý ở Client (Zero API Spamming)**:
-   - Trình duyệt nạp JSON Schema đúng 1 lần khi mở trang.
-   - Toàn bộ thao tác tick/untick, ẩn/hiện, clear đệ quy chạy 100% bằng JavaScript nội bộ tại trình duyệt, **không gửi bất kỳ request API nào lên server khi bấm checkbox**.
-   - Chỉ gửi 1 request duy nhất khi người dùng nhấn nút **[Gửi]**.
-
-4. **Kiểm soát Dữ liệu Y khoa & An toàn Phiên**:
-   - Bản nháp được lưu trong `sessionStorage` (khóa `survey-draft:v1`) giúp người dùng không mất dữ liệu nếu lỡ tay F5 trong phiên làm việc.
-   - Khi gửi thành công: Tự động xóa sạch bản nháp và hiển thị mã phiếu đối soát (ví dụ: `MÃ PHIẾU: 7V3K-91...`).
-
-5. **Đảm bảo Tính Toàn vẹn & Idempotency (Chống Trùng lặp)**:
-   - Trình duyệt tự sinh UUIDv4 (`crypto.randomUUID()`) cho mỗi lần nộp.
-   - Backend tính mã băm SHA-256 từ payload đã chuẩn hóa (canonical JSON).
-   - Nếu xảy ra timeout mạng và người dùng gửi lại cùng UUID: Hệ thống không tạo bản ghi mới mà trả về kết quả thành công hiện có; nếu gửi cùng UUID nhưng sửa nội dung answers, backend sẽ báo lỗi `409 IDEMPOTENCY_CONFLICT`.
-
-6. **Xuất Dữ liệu Khảo sát Định dạng Rộng (Wide-Format Streaming CSV)**:
-   - Định dạng CSV với mỗi lựa chọn bệnh và lựa chọn con là 1 cột nhị phân (0/1) thuận tiện cho phân tích thống kê y học (SPSS, R, Python).
-   - Truy vấn dạng con trỏ luồng (`yield_per(1000)`), có tiền tố UTF-8 BOM (`\ufeff`) giúp Microsoft Excel mở trực tiếp hiển thị trọn vẹn dấu tiếng Việt mà không bao giờ gây tràn RAM máy chủ.
-
----
-
-## 🏗️ KIẾN TRÚC CÔNG NGHỆ
-
-```
-Browser Client (React 18 + TypeScript + Vite)
-       │
-       │ (100% logic cha-con tại client)
-       ▼
-     Nginx (Cổng 80/443 hoặc 8080 - Nén Gzip, Cache tĩnh, Rate-limiting)
-       │
-       ├─► Phục vụ Static SPA (index.html, assets băm)
-       │
-       └─► /api/v1/submissions (Chỉ gọi khi nhấn GỬI)
-             │
-             ▼
-         FastAPI (Python 3.12+, Uvicorn đa luồng, Pydantic v2)
-             │
-             ▼
-      PostgreSQL 16 (Hybrid Relational + JSONB, Volume độc lập)
-```
-
----
-
-## 🚀 KHỞI ĐỘNG NHANH CHO LẬP TRÌNH VIÊN (DEVELOPMENT)
-
-### 1. Chuẩn bị môi trường
-Yêu cầu máy tính đã cài:
-- Python 3.12+
-- Node.js 20+ và npm
-- Docker (nếu muốn chạy qua Docker)
-
-### 2. Thiết lập Backend
-```bash
-# Di chuyển vào thư mục backend
-cd backend
-
-# Cài đặt thư viện phát triển
-pip install -e ".[dev]"
-
-# Khởi chạy backend với hot-reload
-uvicorn app.main:app --reload --port 8000
-```
-- API Docs: `http://localhost:8000/docs`
-- Healthcheck: `http://localhost:8000/health/ready`
-
-### 3. Thiết lập Frontend
-```bash
-# Di chuyển vào thư mục frontend
+```powershell
+python -m venv .venv
+& .\.venv\Scripts\python.exe -m pip install -e './backend[dev]'
 cd frontend
-
-# Cài đặt dependencies
-npm install
-
-# Khởi chạy Vite Dev Server
-npm run dev
-```
-- Truy cập Survey: `http://localhost:5173/`
-- Truy cập Admin: `http://localhost:5173/admin`
-
----
-
-## 🚢 KHỞI ĐỘNG NHANH CHO TRIỂN KHAI MÁY CHỦ (PRODUCTION)
-
-Chỉ với 1 dòng lệnh bằng script tự động hóa:
-
-```bash
-# 1. Sao chép cấu hình mẫu
-cp .env.example .env
-
-# 2. Chỉnh sửa mật khẩu và tên miền
-nano .env
-
-# 3. Chạy script kiểm tra cấu hình máy chủ (Read-only)
-./scripts/check_server.sh
-
-# 4. Triển khai toàn diện hệ thống
-sudo ./scripts/deploy.sh
+npm.cmd ci
+cd ..
 ```
 
-Chi tiết bàn giao cho giảng viên và quản trị viên máy chủ vui lòng đọc [DEPLOYMENT_FOR_TEACHER.md](file:///d:/HocTap/Form-GG/DEPLOYMENT_FOR_TEACHER.md).
+Tạo `backend/.env` với cấu hình local, không commit file này:
 
----
-
-## 🧪 KIỂM THỬ (TESTING)
-
-Chạy bộ 14 bài kiểm thử tích hợp backend:
-```bash
-pytest backend/tests -v
+```dotenv
+APP_ENV=development
+DATABASE_URL=sqlite:///./local_survey.db
+SECRET_KEY=replace-with-a-long-random-development-secret
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+ENABLE_DOCS=true
 ```
 
-Kiểm tra tải hệ thống bằng Locust:
-```bash
-locust -f loadtest/locustfile.py --host http://localhost:8080
+Tài khoản trên chỉ là cấu hình phát triển mẫu. Khởi tạo database một lần:
+
+```powershell
+cd backend
+& ..\.venv\Scripts\python.exe init_local_db.py
 ```
-Chi tiết cấu hình tài nguyên và tối ưu hóa hiệu năng xem tại [PERF.md](file:///d:/HocTap/Form-GG/PERF.md).
+
+Mở hai terminal PowerShell, dùng đường dẫn checkout của bạn:
+
+```powershell
+# Terminal 1
+cd E:\HocTap\GG-Form_WHO\backend
+& ..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+```
+
+```powershell
+# Terminal 2
+cd E:\HocTap\GG-Form_WHO\frontend
+npm.cmd run dev -- --host 127.0.0.1 --strictPort
+```
+
+Hoặc chạy `run_dev.bat` sau khi thiết lập môi trường. Script dùng `.venv` của repository. Giữ terminal mở trong lúc sử dụng; Ctrl+C dừng tiến trình tương ứng.
+
+- Biểu mẫu: http://localhost:5173/
+- Quản trị: http://localhost:5173/admin
+- API Docs: http://localhost:8000/docs
+- Kiểm tra database: http://localhost:8000/health/ready
+
+## Kiểm thử và build
+
+```powershell
+cd backend
+& ..\.venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider --basetemp .pytest-tmp
+cd ..\frontend
+npm.cmd run build
+```
+
+Các test API dùng SQLite trong bộ nhớ và tắt webhook để không ghi dữ liệu thử lên Sheet thật. Kiểm tra health xác nhận kết nối database, không thay thế kiểm tra giao diện hoặc đối chiếu dữ liệu trên Sheet.
+
+## Google Sheets và triển khai
+
+Đọc [hướng dẫn Google Sheets](GOOGLE_SHEETS_GUIDE.md), [triển khai](DEPLOYMENT.md), [bàn giao máy chủ](DEPLOYMENT_FOR_TEACHER.md) và [sao lưu](BACKUP_GUIDE.md).
+
+Đối với Docker, tạo `.env` ở gốc từ [.env.example](.env.example), thay các giá trị mẫu rồi làm theo hướng dẫn triển khai. Không đưa `.env`, database, `ex_data/`, log, môi trường Python hoặc script thử local vào Git.

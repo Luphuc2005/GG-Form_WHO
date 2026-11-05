@@ -11,6 +11,8 @@ from sqlalchemy.pool import StaticPool
 os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["SECRET_KEY"] = "test-secret-key-at-least-32-characters-long!"
+os.environ["GOOGLE_SHEETS_WEBHOOK_URL"] = ""
+os.environ["GOOGLE_SHEETS_SPREADSHEET_ID"] = ""
 
 from app.database import Base, get_db
 from app.main import app
@@ -82,7 +84,10 @@ def db_session():
 
 
 @pytest.fixture(scope="function")
-def client(db_session):
+def client(db_session, monkeypatch):
+    # Startup bootstrap belongs to deployment, not isolated API tests.
+    monkeypatch.setattr("app.main.import_form_schema", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.main.bootstrap_admin", lambda *_args, **_kwargs: None)
     def override_get_db():
         try:
             yield db_session

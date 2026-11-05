@@ -1,69 +1,41 @@
-# Hướng dẫn Kết nối Trực tiếp vào Google Sheets theo Thời gian thực
-### (Real-Time Direct Sync to Google Sheets)
+# Đồng bộ Google Sheets
 
-Hệ thống cho phép bạn **tự động đẩy dữ liệu từng phiếu khảo sát vào thẳng một file Google Sheets** ngay khi người dùng nhấn nút [Gửi], y hệt như Google Forms cũ nhưng với đầy đủ logic cha-con hiện đại!
+Database là nơi lưu phiếu chính. Webhook bổ sung phiếu mới vào Sheet; nút **Đồng bộ lại Sheet** đối chiếu mã phiếu và bổ sung những phiếu còn thiếu.
 
----
+## Thiết lập
 
-## CÁCH THỰC HIỆN TRONG 2 PHÚT:
+1. Mở Sheet đích, chọn **Tiện ích mở rộng → Apps Script**.
+2. Dùng mã nguồn trong [deploy/google_apps_script.js](deploy/google_apps_script.js), tránh sao chép lại bản mã cũ từ tài liệu.
+3. Triển khai dưới dạng ứng dụng web với quyền thực thi và truy cập phù hợp cho backend. Lưu URL `/exec` trong cấu hình local.
+4. Cấu hình `backend/.env` khi chạy local; Docker đọc các biến từ `.env` ở gốc:
 
-### BƯỚC 1: Tạo Google Apps Script trên file Google Sheets
-1. Mở trang Google Sheets của bạn (hoặc tạo một trang tính Google mới tại [sheets.new](https://sheets.new)).
-2. Đặt tên trang tính (ví dụ: *Kết quả Khảo sát GPB U buồng trứng WHO*).
-3. Trên thanh menu, bấm vào **Tiện ích mở rộng** (Extensions) -> Chọn **Apps Script**.
-4. Xóa toàn bộ đoạn code mặc định có sẵn và dán đoạn mã sau vào (đã có sẵn trong [deploy/google_apps_script.js](file:///d:/HocTap/Form-GG/deploy/google_apps_script.js)):
-
-```javascript
-function doPost(e) {
-  try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var data = JSON.parse(e.postData.contents);
-
-    // Tạo dòng tiêu đề nếu trang tính còn trống
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(data.headers);
-      var headerRange = sheet.getRange(1, 1, 1, data.headers.length);
-      headerRange.setFontWeight("bold");
-      headerRange.setBackground("#673ab7");
-      headerRange.setFontColor("#ffffff");
-      sheet.setFrozenRows(1);
-    }
-
-    // Chèn dữ liệu phiếu mới vào cuối bảng
-    sheet.appendRow(data.row);
-
-    return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
+```dotenv
+GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/your_deployment_id/exec
+GOOGLE_SHEETS_SPREADSHEET_ID=your_spreadsheet_id
 ```
 
-### BƯỚC 2: Triển khai (Deploy) lấy đường link Webhook
-1. Ở góc trên bên phải màn hình Apps Script, bấm nút **Triển khai** (Deploy) màu xanh -> Chọn **Tùy chọn triển khai mới** (New deployment).
-2. Bấm vào biểu tượng bánh răng cạnh "Chọn loại" -> Chọn **Ứng dụng web** (Web app).
-3. Cấu hình 3 mục:
-   - **Mô tả**: *Khảo sát GPB Sync*
-   - **Thực thi dưới dạng**: **Tôi** (Me)
-   - **Ai có quyền truy cập**: **Bất kỳ ai** (Anyone) *(Rất quan trọng: phải chọn Anyone để server gửi dữ liệu qua được).*
-4. Nhấn **Triển khai** (Deploy) -> Bấm **Ủy quyền truy cập** (Authorize access) bằng tài khoản Google của bạn -> Bấm **Nâng cao** (Advanced) -> Chọn **Đi tới dự án (không an toàn)** -> Bấm **Cho phép** (Allow).
-5. Sau khi xong, màn hình sẽ cung cấp một đường link **URL ứng dụng web**, có dạng:
-   `https://script.google.com/macros/s/AKfycbx.../exec`
-6. Sao chép (Copy) đường link này.
+Spreadsheet ID là phần giữa `/d/` và `/edit` trong URL bảng tính. Phần đối chiếu đọc bản xuất CSV của trang `gid=0`; endpoint phải truy cập được từ backend. Ứng dụng không tự thay đổi quyền chia sẻ Sheet. Không đưa URL webhook thật hoặc dữ liệu bệnh án vào Git.
 
-### BƯỚC 3: Dán link vào hệ thống
-Mở tệp `.env` của dự án (hoặc `backend/.env`), dán đường link vừa copy vào biến:
+Khởi động lại backend sau khi đổi cấu hình. Nếu thay mã Apps Script, cập nhật bản triển khai đang được URL webhook sử dụng.
 
-```bash
-GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/AKfycbx.../exec
-```
+## Đối chiếu phiếu
 
----
+Nút **Đồng bộ lại Sheet** thực hiện:
 
-## KẾT QUẢ ĐẠT ĐƯỢC:
-- Cứ mỗi khi có bất kỳ ai điền phiếu khảo sát trên trang web và bấm **[GỬI]**:
-  1. Dữ liệu được lưu trữ an toàn vào cơ sở dữ liệu PostgreSQL của hệ thống.
-  2. Đồng thời, một tiến trình chạy ngầm lập tức đẩy dòng dữ liệu đó lên **Google Sheets** của bạn.
-- Bạn và giảng viên có thể mở file Google Sheets trên điện thoại hoặc máy tính để xem từng dòng kết quả nhảy vào theo thời gian thực (real-time)!
+1. Đọc các UUID đã có trên Sheet và kiểm tra cấu trúc cột.
+2. Lấy phiếu ở tất cả phiên bản biểu mẫu đang có trong database.
+3. Gửi riêng những UUID còn thiếu; giữ các dòng đã có.
+4. Đọc lại Sheet, kiểm tra mã thiếu, mã thừa và dòng trùng.
+
+Chỉ khi bước đọc lại khớp database, API mới trả `verified: true` và số phiếu thực tế. HTTP 200 từ Apps Script kèm JSON lỗi vẫn được coi là lỗi. Nếu một lượt gửi bị gián đoạn, có thể đối chiếu lại để bổ sung phần còn thiếu.
+
+Phiếu mới được gửi nền sau khi lưu database. Việc gửi nền có thể thất bại khi mạng hoặc Apps Script không sẵn sàng; dùng chức năng đối chiếu để phục hồi. Khóa đồng bộ hiện nằm trong từng tiến trình backend, không phải khóa dùng chung giữa nhiều worker.
+
+## Khi có lỗi
+
+- **Không đọc được Sheet:** kiểm tra Spreadsheet ID, `gid=0` và quyền đọc CSV hiện có.
+- **Cấu trúc cột khác:** so sánh tiêu đề với CSV xuất từ admin trước khi tiếp tục.
+- **Mã thừa hoặc dòng trùng:** kiểm tra các dòng được báo; luồng đối chiếu không tự xóa chúng.
+- **Apps Script chưa xác nhận thao tác:** kiểm tra bản triển khai và JSON trả về; không chỉ dựa vào mã HTTP.
+
+Mã Apps Script định dạng cột Số HS và PARA dạng text để giữ các số 0 ở đầu. Xuất CSV cũng giữ PARA dưới dạng chuỗi.

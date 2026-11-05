@@ -1,7 +1,9 @@
+import os
+os.environ.setdefault("DATABASE_URL", "sqlite:///./local_survey.db")
+
 from app.database import engine, Base
 from app.commands.import_form import import_form_schema
 from app.commands.create_admin import bootstrap_admin
-import os
 
 print("1. Đang khởi tạo các bảng trong database SQLite...")
 Base.metadata.create_all(bind=engine)
