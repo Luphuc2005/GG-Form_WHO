@@ -41,7 +41,7 @@ echo  DA GUI LENH KHOI DONG. XEM LOG TRONG HAI CUA SO VA KIEM TRA URL BEN DUOI.
 echo.
 echo  - Form khao sat:     http://localhost:5173/
 echo  - Quan tri Admin:    http://localhost:5173/admin
-echo    (Tai khoan: admin / Mat khau: admin123)
+echo    Dang nhap bang tai khoan ca nhan. Quan tri vien cap tai khoan trong muc Tai khoan.
 echo  - API Docs Swagger:  http://localhost:8000/docs
 echo ====================================================================
 echo.
