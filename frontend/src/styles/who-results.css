@@ -1,0 +1,62 @@
+.who-results-fields {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.who-result-field {
+  min-width: 0;
+}
+.who-result-field + .who-result-field {
+  border-top: 1px solid #dce5ed;
+  padding-top: 24px;
+}
+.who-result-field > .field-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.who-result-field .who-summary-card {
+  margin-top: 16px;
+}
+.who-result-catalog {
+  margin-top: 14px;
+}
+.who-result-catalog summary {
+  color: #087f78;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.who-result-catalog .options-list {
+  margin-top: 12px;
+  max-height: 380px;
+  overflow: auto;
+}
+.who-result-catalog .option-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+.who-result-catalog input[type="radio"] {
+  width: 16px !important;
+  min-width: 16px;
+  min-height: 16px !important;
+  height: 16px;
+  padding: 0;
+  flex: 0 0 16px;
+  accent-color: #087f78;
+}
+.who-result-field .who-icdo-code {
+  white-space: nowrap;
+}
+.who-result-field .who-summary-card > div:last-child {
+  text-align: right;
+}
+@media (max-width: 560px) {
+  .who-result-field > .field-label {
+    flex-direction: column;
+    gap: 4px;
+  }
+}

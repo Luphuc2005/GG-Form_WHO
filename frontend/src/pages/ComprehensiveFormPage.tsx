@@ -1,51 +1,48 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   Send,
-  Download,
   Check,
   Trash2,
+  FileText,
+  Save,
+  ChevronDown,
 } from "lucide-react";
 import { FormSchemaDefinition } from "../types/schema";
-import { fetchCurrentForm, submitSurveyAnswers } from "../api/client";
+import { RecordAnswers, workflowApi } from "../api/workflow";
+import { ManagedFormPage } from "./ManagedFormPage";
+import { WhoResultsFields, whoValueAt, buildWhoPathology } from "../components/WhoResultsFields";
 
-interface ComprehensiveFormPageProps {
-  onSwitchToClassic?: () => void;
+export interface ComprehensiveFormPageProps {
+  initialAnswers: RecordAnswers;
+  schema: FormSchemaDefinition;
+  readOnly: boolean;
+  busy: boolean;
+  onDraftChange: (answers: RecordAnswers) => void;
+  onSubmit: (answers: RecordAnswers) => Promise<void>;
+  submitLabel?: string;
+  compact?: boolean;
+  identityVersion?: number;
+  studyCode?: string | null;
+  saveStatus?: string;
 }
 
-export const WHO_PATHOLOGY_OPTIONS_V2 = [
-  { id: "serous_cystadenoma_8441_0", code: "8441/0", label: "U thanh dịch lành tính/Serous cystadenoma (8441/0)", classification: "benign" },
-  { id: "serous_borderline_8442_1", code: "8442/1", label: "U thanh dịch giáp biên ác/Serous borderline tumour (8442/1)", classification: "borderline" },
-  { id: "lgsc_8460_3", code: "8460/3", label: "Ung thư biểu mô tuyến thanh dịch độ thấp/Low-grade serous carcinoma LGSC (8460/3)", classification: "malignant" },
-  { id: "hgsc_8461_3", code: "8461/3", label: "Ung thư biểu mô tuyến thanh dịch độ cao/High-grade serous carcinoma HGSC (8461/3)", classification: "malignant" },
-  { id: "mucinous_cystadenoma_8470_0", code: "8470/0", label: "U dịch nhầy lành tính/Mucinous cystadenoma (8470/0)", classification: "benign" },
-  { id: "mucinous_borderline_8472_1", code: "8472/1", label: "U dịch nhầy giáp biên ác/Mucinous borderline tumour (8472/1)", classification: "borderline" },
-  { id: "mucinous_adenocarcinoma_8480_3", code: "8480/3", label: "Ung thư biểu mô tuyến dịch nhầy/Mucinous adenocarcinoma (8480/3)", classification: "malignant" },
-  { id: "endometrioma_benign", code: "Nang lạc NMTC", label: "Nang lạc nội mạc tử cung lành", classification: "benign" },
-  { id: "endometrioid_adenocarcinoma_8380_3", code: "8380/3", label: "Ung thư dạng nội mạc tử cung/Endometrioid adenocarcinoma (8380/3)", classification: "malignant" },
-  { id: "seromucinous_carcinoma_8474_3", code: "8474/3", label: "Ung thư thanh dịch nhầy/Seromucinous carcinoma (8474/3)", classification: "malignant" },
-  { id: "clear_cell_adenocarcinoma_8310_3", code: "8310/3", label: "Ung thư tế bào sáng/Clear cell adenocarcinoma (8310/3)", classification: "malignant" },
-  { id: "brenner_tumor_9000_0", code: "9000/0", label: "U Brenner (9000/0)", classification: "benign" },
-  { id: "mature_teratoma_9080_0", code: "9080/0", label: "U quái trưởng thành/Mature teratoma (9080/0)", classification: "benign" },
-  { id: "immature_teratoma_9080_3", code: "9080/3", label: "U quái không trưởng thành/Immature teratoma (9080/3)", classification: "malignant" },
-  { id: "dysgerminoma_9060_3", code: "9060/3", label: "U nguyên bào mầm/Dysgerminoma (9060/3)", classification: "malignant" },
-  { id: "yolk_sac_tumor_9071_3", code: "9071/3", label: "U túi noãn hoàng/Yolk sac tumour (9071/3)", classification: "malignant" },
-  { id: "fibroma_8810_0", code: "8810/0", label: "U sợi buồng trứng/Fibroma (8810/0)", classification: "benign" },
-  { id: "cellular_fibroma_8810_1", code: "8810/1", label: "U sợi giàu tế bào/Cellular fibroma (8810/1)", classification: "borderline" },
-  { id: "thecoma_8600_0", code: "8600/0", label: "U vỏ xơ buồng trứng/Thecoma (8600/0)", classification: "benign" },
-  { id: "pathology_other", code: "Khác", label: "Khác:", classification: "unspecified" },
-];
+export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = props => props.schema.clinical_fields ? <ManagedFormPage {...props}/> : <LegacyComprehensiveFormPage {...props}/>;
 
-export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () => {
-  // Schema for WHO pathology tree
-  const [whoSchema, setWhoSchema] = useState<FormSchemaDefinition | null>(null);
-  const [selectedPathologyId, setSelectedPathologyId] = useState<string>(() => {
-    return sessionStorage.getItem("clinical_form_draft_pathology") ?? "endometrioma_benign";
-  });
-  const [pathologyOtherText, setPathologyOtherText] = useState<string>("");
-  const [showPathologyRadioList, setShowPathologyRadioList] = useState(false);
+const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ initialAnswers, schema, readOnly, busy, onDraftChange, onSubmit, submitLabel = "Gửi phiếu", compact = false, identityVersion = 2, studyCode = null, saveStatus = "" }) => {
+  const pathologyOptions = (schema.fields.find(f => f.id === "pathology")?.options || []).map(o => ({ ...o, code: o.numericCode || "", classification: o.classification || "unspecified" }));
+  const [selectedPathologyId, setSelectedPathologyId] = useState(whoValueAt(initialAnswers, 1).id);
+  const [pathologyOtherText, setPathologyOtherText] = useState(whoValueAt(initialAnswers, 1).other);
+  const [secondPathologyId, setSecondPathologyId] = useState(whoValueAt(initialAnswers, 2).id);
+  const [secondPathologyOtherText, setSecondPathologyOtherText] = useState(whoValueAt(initialAnswers, 2).other);
+  const [formError, setFormError] = useState("");
+  const [catalogError, setCatalogError] = useState("");
+  const [clinicalChoices, setClinicalChoices] = useState<Record<string, (string | number)[]>>({});
+  const [identityOptions, setIdentityOptions] = useState<{hospitals: Record<string,string>; phases: Record<string,string>}>({hospitals:{},phases:{}});
+  useEffect(() => { workflowApi<{ choices: typeof clinicalChoices; research_identity: typeof identityOptions }>("/forms/clinical-contract").then(c => {setClinicalChoices(c.choices);setIdentityOptions(c.research_identity);}).catch(() => setCatalogError("Chưa tải được danh mục lựa chọn của biểu mẫu. Vui lòng tải lại trang.")); }, []);
 
   // References for smooth scrolling
   const sectionRefs = {
+    meta: useRef<HTMLDivElement>(null),
     sec1: useRef<HTMLDivElement>(null),
     sec2: useRef<HTMLDivElement>(null),
     sec3: useRef<HTMLDivElement>(null),
@@ -54,19 +51,21 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
     sec6: useRef<HTMLDivElement>(null),
     sec7: useRef<HTMLDivElement>(null),
   };
+  const navigationRef = useRef<HTMLElement>(null);
 
   // Accordion open/close states (All 6 sections open by default)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     sec1: true,
-    sec2: true,
-    sec3: true,
-    sec4: true,
-    sec5: true,
-    sec6: true,
-    sec7: true,
+    sec2: !compact,
+    sec3: !compact,
+    sec4: !compact,
+    sec5: !compact,
+    sec6: !compact,
+    sec7: !compact,
   });
 
-  const [activeTab, setActiveTab] = useState<string>("sec1");
+  const [activeTab, setActiveTab] = useState<string>(compact ? "sec1" : "meta");
+  const navigationOffset = () => compact ? 85 : window.innerWidth <= 1040 ? (navigationRef.current?.offsetHeight || 100) + 18 : 20;
 
   const toggleSection = (sec: string) => {
     setOpenSections((prev) => ({ ...prev, [sec]: !prev[sec] }));
@@ -80,8 +79,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
     setTimeout(() => {
       const el = sectionRefs[secKey].current;
       if (el) {
-        const topOffset = el.getBoundingClientRect().top + window.scrollY - 85;
-        window.scrollTo({ top: Math.max(0, topOffset), behavior: "smooth" });
+        const topOffset = el.getBoundingClientRect().top + window.scrollY - navigationOffset();
+        window.scrollTo({ top: Math.max(0, topOffset), behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
       }
     }, 40);
   };
@@ -104,6 +103,7 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
           }
 
           const sections: Array<{ key: string; el: HTMLDivElement | null }> = [
+            { key: "meta", el: sectionRefs.meta.current },
             { key: "sec1", el: sectionRefs.sec1.current },
             { key: "sec2", el: sectionRefs.sec2.current },
             { key: "sec3", el: sectionRefs.sec3.current },
@@ -113,8 +113,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
             { key: "sec7", el: sectionRefs.sec7.current },
           ];
 
-          const threshold = 140;
-          let currentSec = "sec1";
+          const threshold = navigationOffset() + 24;
+          let currentSec = compact ? "sec1" : "meta";
 
           for (const sec of sections) {
             if (sec.el) {
@@ -135,69 +135,51 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
     window.addEventListener("scroll", handleScroll, { passive: true });
     handleScroll();
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [compact]);
 
   // 52 Clinical Fields + WHO Pathology + IOTA ADNEX 6 Sub-fields
-  const [form, setForm] = useState<Record<string, any>>(() => {
-    const saved = sessionStorage.getItem("clinical_form_draft");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return {
-      // 1-5. Hành chính
+  const [form, setForm] = useState<Record<string, any>>(() => ({
       so_hs: "",
       ho_ten: "",
       nam_sinh: "",
       nam_kham: "",
       dia_chi: "",
       nghe_nghiep: "",
-
-      // 6-16. Tiền sử & Lâm sàng
       tuoi_phau_thuat: "",
-      para: "0000",
-      kinh_nguyet: "Còn hành kinh",
-      thoi_diem_phat_hien: "Mới phát hiện",
-      tien_can_phau_thuat_ubt: "Không",
+      para: "",
+      kinh_nguyet: "",
+      thoi_diem_phat_hien: "",
+      tien_can_phau_thuat_ubt: "",
       tien_can_phau_thuat_ubt_ghi_chu: "",
-      tien_can_ung_thu_khac: "Không",
+      tien_can_ung_thu_khac: "",
       tien_can_ung_thu_khac_ghi_chu: "",
-      tien_can_lac_nmtc: "Không",
-      co_thai: "Không",
-      ubt_xoan: "Không",
-      ubt_vo: "Không",
-      ubt_nhiem_trung: "Không",
-
-      // 17-21. Dấu ấn sinh học
+      tien_can_lac_nmtc: "",
+      co_thai: "",
+      ubt_xoan: "",
+      ubt_vo: "",
+      ubt_nhiem_trung: "",
       ca_125: "",
       he4: "",
       roma: "",
       afp: "",
       beta_hcg: "",
-
-      // 22-38. Siêu âm (IOTA / O-RADS)
-      sa_so_luong_u: "1 bên",
-      sa_mo_buong_trung: "Còn",
-      sa_phan_loai_u: "Đơn thùy",
+      sa_so_luong_u: "",
+      sa_mo_buong_trung: "",
+      sa_phan_loai_u: "",
       sa_phan_am: [] as string[],
       sa_kich_thuoc_u: "",
-      sa_bo_ngoai: "Đều",
-      sa_bo_trong: "Trơn láng",
-      sa_so_luong_thuy: "1",
+      sa_bo_ngoai: "",
+      sa_bo_trong: "",
+      sa_so_luong_thuy: "",
       sa_kich_thuoc_phan_dac: "",
-      sa_bong_lung: "Không",
-      sa_nang_trong_phan_dac: "Không",
+      sa_bong_lung: "",
+      sa_nang_trong_phan_dac: "",
       sa_nang_trong_phan_dac_so_luong: "",
-      sa_choi: "Không",
-      sa_tang_sinh_mach_mau: "Không tăng sinh",
-      sa_dich_o_bung: "Không",
-      sa_ton_thuong_nmtc: "Không",
+      sa_choi: "",
+      sa_tang_sinh_mach_mau: "",
+      sa_dich_o_bung: "",
+      sa_ton_thuong_nmtc: "",
       sa_ton_thuong_nmtc_ghi_chu: "",
-
-      // 37. IOTA ADNEX (6 mục nhỏ)
       iota_benign: "",
       iota_malignant: "",
       iota_borderline: "",
@@ -205,84 +187,58 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
       iota_stage2_4: "",
       iota_metastatic: "",
       sa_iota_adnex: "",
-
-      // 38. ORADS
       sa_orads: "",
-
-      // 39-52. MRI
-      mri_mo_buong_trung: "Còn",
-      mri_so_luong_u: "1 bên",
-      mri_dang_ton_thuong: "Nang đơn thùy",
+      mri_mo_buong_trung: "",
+      mri_so_luong_u: "",
+      mri_dang_ton_thuong: "",
       mri_kich_thuoc_u: "",
-      mri_dich_nang_t1w: "thấp",
-      mri_dich_nang_t2w: "cao",
-      mri_dich_nang: "T1w: thấp, T2w: cao",
-      mri_thanh_phan_mo: "Không",
-      mri_phan_dac: "Không",
+      mri_dich_nang_t1w: "",
+      mri_dich_nang_t2w: "",
+      mri_dich_nang: "",
+      mri_thanh_phan_mo: "",
+      mri_phan_dac: "",
       mri_kich_thuoc_phan_dac: "",
-      mri_khuech_tan: "Không giới hạn",
-      mri_ngam_thuoc: "type 1",
-      mri_hach: "Không",
-      mri_dich_o_bung: "Không",
+      mri_khuech_tan: "",
+      mri_tang_sinh_mach_mau: "",
+      mri_ngam_thuoc: "",
+      mri_hach: "",
+      mri_dich_o_bung: "",
       mri_ton_thuong_co_quan_khac: "",
       mri_ket_luan: "",
-
-      // VI. Protocol phẫu thuật
-      pt_chan_doan_truoc: "u buồng trứng",
-      pt_chan_doan_sau: "u buồng trứng",
-      pt_phuong_phap: ["cắt u"] as string[],
-      pt_sinh_thiet_lanh: "Không",
+      pt_chan_doan_truoc: "",
+      pt_chan_doan_sau: "",
+      pt_sinh_thiet_lanh: "",
       pt_sinh_thiet_lanh_ghi_chu: "",
       pt_ton_thuong: "",
-      pt_dich_o_bung: "Không có",
-    };
-  });
+      hospital_code: "", study_phase: "", encounter_code: "", treatment_date: "", missing_reasons: {},
+      ...initialAnswers.clinical_data,
+      // Preserve historical string values from older records while editing arrays.
+      pt_phuong_phap: Array.isArray(initialAnswers.clinical_data?.pt_phuong_phap) ? initialAnswers.clinical_data.pt_phuong_phap : (initialAnswers.clinical_data?.pt_phuong_phap ? String(initialAnswers.clinical_data.pt_phuong_phap).split(/,\s*/) : []),
+  }));
 
   const handleClearAll = () => {
-    const emptyForm = Object.fromEntries(
-      Object.entries(form).map(([key, value]) => [key, Array.isArray(value) ? [] : ""])
-    );
-    setForm(emptyForm);
-    setSelectedPathologyId("");
-    setPathologyOtherText("");
-    setShowPathologyRadioList(false);
-    sessionStorage.setItem("clinical_form_draft", JSON.stringify(emptyForm));
-    sessionStorage.setItem("clinical_form_draft_pathology", "");
-    sessionStorage.removeItem("clinical_form_draft_pathology_other");
+    if (!window.confirm("Xóa toàn bộ nội dung đang nhập của phiếu này? Thay đổi sẽ được lưu vào bản nháp.")) return;
+    setForm(Object.fromEntries(Object.keys(form).map(key => [key, key === "missing_reasons" ? {} : ["sa_phan_am", "pt_phuong_phap"].includes(key) ? [] : ""])));
+    setSelectedPathologyId(""); setPathologyOtherText(""); setSecondPathologyId(""); setSecondPathologyOtherText("");
   };
 
-  // Real-time persistence to draft
-  useEffect(() => {
-    sessionStorage.setItem("clinical_form_draft", JSON.stringify(form));
-  }, [form]);
-
-  // Load WHO schema from server
-  useEffect(() => {
-    fetchCurrentForm()
-      .then((res) => setWhoSchema(res.schema_json))
-      .catch((err) => console.error("Lỗi tải WHO schema:", err));
-  }, []);
-
+  const buildAnswers = (): RecordAnswers => ({
+    pathology: buildWhoPathology([{id:selectedPathologyId,other:pathologyOtherText},{id:secondPathologyId,other:secondPathologyOtherText}], pathologyOptions),
+    classification: pathologyOptions.find(o => o.id === selectedPathologyId)?.classification || "unspecified",
+    clinical_data: form,
+  });
+  useEffect(() => { setFormError(""); }, [form, selectedPathologyId, pathologyOtherText, secondPathologyId, secondPathologyOtherText]);
+  useEffect(() => { if (!readOnly) onDraftChange(buildAnswers()); }, [form, selectedPathologyId, pathologyOtherText, secondPathologyId, secondPathologyOtherText, readOnly, onDraftChange]);
 
   // Field change handler
   const handleChange = (field: string, value: any) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
 
-      if (field === "nam_sinh" || field === "nam_kham") {
-        const birthYear = parseInt(field === "nam_sinh" ? value : prev.nam_sinh, 10);
-        const examYear = parseInt(field === "nam_kham" ? value : prev.nam_kham, 10);
-
-        if (!isNaN(birthYear) && birthYear > 1900 && birthYear < 2030) {
-          if (!isNaN(examYear) && examYear >= birthYear) {
-            next.tuoi_phau_thuat = String(examYear - birthYear);
-          } else if (!prev.tuoi_phau_thuat || prev.tuoi_phau_thuat === "") {
-            const currentYear = new Date().getFullYear();
-            next.tuoi_phau_thuat = String(currentYear - birthYear);
-          }
-        }
+      if (value !== "" && value !== undefined) {
+        next.missing_reasons = { ...(prev.missing_reasons || {}) };
+        delete next.missing_reasons[field];
       }
-
       if (field === "iota_malignant") {
         next.sa_iota_adnex = value;
       }
@@ -302,298 +258,38 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
   };
 
 
-  // Export to CSV with exact header names
-  const exportToCSV = () => {
-    const headers = [
-      "Số HS",
-      "Họ Tên",
-      "Năm Sinh",
-      "Năm Khám",
-      "Địa chỉ",
-      "Nghề nghiệp",
-      "Tuổi BN khi phẫu thuật",
-      "PARA",
-      "Kinh nguyệt",
-      "Thời điểm phát hiện UBT",
-      "Tiền căn phẫu thuật UBT",
-      "Ghi chú GPB nếu có",
-      "Tiền căn ung thư khác",
-      "Ghi chú loại ung thư nếu có",
-      "Tiền căn lạc nội mạc tử cung",
-      "Có thai",
-      "UBT xoắn",
-      "UBT vỡ",
-      "UBT nhiễm trùng",
-      "CA 125",
-      "HE4",
-      "ROMA",
-      "AFP",
-      "beta hCG",
-      "Số lượng u",
-      "Mô buồng trứng",
-      "Phân loại u",
-      "Phản âm (chọn nhiều lựa chọn)",
-      "Kích thước u",
-      "Bờ ngoài",
-      "Bờ trong",
-      "Số lượng thùy",
-      "Kích thước phần đặc",
-      "Bóng lưng",
-      "Nang trong phần đặc",
-      "Chồi",
-      "Tăng sinh mạch máu",
-      "Dịch ổ bụng",
-      "Tổn thương NMTC",
-      "IOTA ADNEX",
-      "IOTA ADNEX - Benign (%)",
-      "IOTA ADNEX - Malignant (%)",
-      "IOTA ADNEX - Borderline (%)",
-      "IOTA ADNEX - Stage I (%)",
-      "IOTA ADNEX - Stage II-IV (%)",
-      "IOTA ADNEX - Metastatic (%)",
-      "ORADS",
-      "Mô buồng trứng",
-      "Số lượng u",
-      "Dạng tổn thương",
-      "Kích thước u",
-      "Dịch nang",
-      "Thành phần mỡ",
-      "Phần đặc",
-      "Kích thước phần đặc",
-      "Khuếch tán",
-      "Đặc điểm ngấm thuốc tương phản từ",
-      "Hạch",
-      "Dịch ổ bụng",
-      "Tổn thương cơ quan khác",
-      "Kết luận MRI",
-      "Chẩn đoán trước phẫu thuật",
-      "Chẩn đoán sau phẫu thuật",
-      "Phương pháp phẫu thuật",
-      "Sinh thiết lạnh",
-      "Dịch ổ bụng khi phẫu thuật",
-      "Mô tả tổn thương u khi phẫu thuật",
-      "Phân loại Giải phẫu bệnh theo WHO",
-    ];
-
-    const iotaSummary = [
-      form.iota_benign ? `Benign: ${form.iota_benign}%` : "",
-      form.iota_malignant ? `Malignant: ${form.iota_malignant}%` : "",
-      form.iota_borderline ? `Borderline: ${form.iota_borderline}%` : "",
-      form.iota_stage1 ? `Stage I: ${form.iota_stage1}%` : "",
-      form.iota_stage2_4 ? `Stage II-IV: ${form.iota_stage2_4}%` : "",
-      form.iota_metastatic ? `Metastatic: ${form.iota_metastatic}%` : "",
-    ].filter(Boolean).join(" | ") || form.sa_iota_adnex;
-
-    const values = [
-      form.so_hs,
-      form.ho_ten,
-      form.nam_sinh,
-      form.nam_kham,
-      form.dia_chi,
-      form.nghe_nghiep,
-      form.tuoi_phau_thuat,
-      form.para,
-      form.kinh_nguyet,
-      form.thoi_diem_phat_hien,
-      form.tien_can_phau_thuat_ubt,
-      form.tien_can_phau_thuat_ubt_ghi_chu,
-      form.tien_can_ung_thu_khac,
-      form.tien_can_ung_thu_khac_ghi_chu,
-      form.tien_can_lac_nmtc,
-      form.co_thai,
-      form.ubt_xoan,
-      form.ubt_vo,
-      form.ubt_nhiem_trung,
-      form.ca_125,
-      form.he4,
-      form.roma,
-      form.afp,
-      form.beta_hcg,
-      form.sa_so_luong_u,
-      form.sa_mo_buong_trung,
-      form.sa_phan_loai_u,
-      Array.isArray(form.sa_phan_am) ? form.sa_phan_am.join(", ") : form.sa_phan_am,
-      form.sa_kich_thuoc_u,
-      form.sa_bo_ngoai,
-      form.sa_bo_trong,
-      form.sa_so_luong_thuy,
-      form.sa_kich_thuoc_phan_dac,
-      form.sa_bong_lung,
-      form.sa_nang_trong_phan_dac,
-      form.sa_choi,
-      form.sa_tang_sinh_mach_mau,
-      form.sa_dich_o_bung,
-      form.sa_ton_thuong_nmtc,
-      iotaSummary,
-      form.iota_benign,
-      form.iota_malignant,
-      form.iota_borderline,
-      form.iota_stage1,
-      form.iota_stage2_4,
-      form.iota_metastatic,
-      form.sa_orads,
-      form.mri_mo_buong_trung,
-      form.mri_so_luong_u,
-      form.mri_dang_ton_thuong,
-      form.mri_kich_thuoc_u,
-      form.mri_dich_nang,
-      form.mri_thanh_phan_mo,
-      form.mri_phan_dac,
-      form.mri_kich_thuoc_phan_dac,
-      form.mri_khuech_tan,
-      form.mri_ngam_thuoc,
-      form.mri_hach,
-      form.mri_dich_o_bung,
-      form.mri_ton_thuong_co_quan_khac,
-      form.mri_ket_luan,
-      form.pt_chan_doan_truoc || "",
-      form.pt_chan_doan_sau || "",
-      Array.isArray(form.pt_phuong_phap) ? form.pt_phuong_phap.join(", ") : (form.pt_phuong_phap || ""),
-      form.pt_sinh_thiet_lanh === "Có" && form.pt_sinh_thiet_lanh_ghi_chu
-        ? `Có (${form.pt_sinh_thiet_lanh_ghi_chu})`
-        : (form.pt_sinh_thiet_lanh || ""),
-      form.pt_dich_o_bung || "",
-      form.pt_ton_thuong || "",
-      selectedPathologyId === "pathology_other"
-        ? `Khác (${pathologyOtherText || "chưa ghi"})`
-        : (WHO_PATHOLOGY_OPTIONS_V2.find((o) => o.id === selectedPathologyId)?.label || ""),
-    ];
-
-    const csvContent =
-      "\ufeff" +
-      headers.map((h) => `"${h}"`).join(",") +
-      "\n" +
-      values.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",") +
-      "\n";
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute(
-      "download",
-      `benh_an_ubt_${form.so_hs || "chua_co_so"}_${Date.now()}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
-
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isIotaSumInvalid) {
-      alert(`Cảnh báo: Tổng 6 mục IOTA ADNEX hiện là ${currentIotaSum}%. Yêu cầu tổng các mục phải bằng đúng 100%! Vui lòng kiểm tra lại trước khi gửi phiếu.`);
-      scrollToSection("sec4");
-      return;
+    e.preventDefault(); setFormError("");
+    if (readOnly || busy) return;
+    if (compact) { await onSubmit(buildAnswers()); return; }
+    if (!form.hospital_code?.trim() || !form.study_phase) {
+      setFormError("Chọn bệnh viện và giai đoạn nghiên cứu trước khi gửi phiếu."); scrollToSection("meta"); return;
     }
-    setIsSubmitting(true);
-    setSubmitSuccess(null);
-
-    try {
-      if (!selectedPathologyId) {
-        alert("Vui lòng chọn 1 kết quả Giải phẫu bệnh theo WHO!");
-        scrollToSection("sec7");
-        return;
-      }
-      if (selectedPathologyId === "pathology_other" && !pathologyOtherText.trim()) {
-        alert("Vui lòng nhập tên Giải phẫu bệnh khác!");
-        scrollToSection("sec7");
-        return;
-      }
-
-      const matchedOpt = WHO_PATHOLOGY_OPTIONS_V2.find((o) => o.id === selectedPathologyId);
-      const uuid = crypto.randomUUID();
-      const payloadAnswers: any = {
-        pathology: {
-          selected: selectedPathologyId ? [{
-            id: selectedPathologyId,
-            children: [],
-            other_text: selectedPathologyId === "pathology_other" ? pathologyOtherText.trim() : null,
-          }] : [],
-          other_text: selectedPathologyId === "pathology_other" ? pathologyOtherText.trim() : null,
-        },
-        classification: matchedOpt?.classification || "unspecified",
-        clinical_data: {
-          ...form,
-          pt_phuong_phap: Array.isArray(form.pt_phuong_phap) ? form.pt_phuong_phap.join(", ") : form.pt_phuong_phap,
-        },
-      };
-
-      const res = await submitSurveyAnswers({
-        submission_uuid: uuid,
-        form_version: whoSchema?.version || 1,
-        answers: payloadAnswers,
-      });
-
-      setSubmitSuccess(res.reference_code || res.submission_uuid);
-      sessionStorage.removeItem("clinical_form_draft");
-    } catch (err: any) {
-      alert("Lỗi khi gửi phiếu: " + (err.message || "Không thể kết nối đến máy chủ"));
-    } finally {
-      setIsSubmitting(false);
+    if (!form.so_hs?.trim()) {
+      setFormError("Điền số hồ sơ ở mục I trước khi gửi phiếu."); scrollToSection("sec1"); return;
     }
+    if (isIotaSumInvalid) { setFormError("Kiểm tra tỷ lệ: cần nhập đủ 6 ô, mỗi ô từ 0 đến 100%, và tổng cả 6 ô phải bằng 100% theo quy ước của phiếu."); scrollToSection("sec4"); return; }
+    if (!selectedPathologyId || (pathologyOptions.find(o => o.id === selectedPathologyId)?.has_other_text && !pathologyOtherText.trim()) || (pathologyOptions.find(o => o.id === secondPathologyId)?.has_other_text && !secondPathologyOtherText.trim())) {
+      setFormError("Vui lòng chọn kết quả GPB; chọn Khác cần ghi rõ nội dung."); scrollToSection("sec7"); return;
+    }
+    await onSubmit(buildAnswers());
   };
 
-
-  // =========================================================================
-  // IOTA ADNEX: Tính tổng 6 mục (Miễn sao tổng bằng đúng 100%)
-  // =========================================================================
-  const iotaB = parseFloat(form.iota_benign) || 0;
-  const iotaM = parseFloat(form.iota_malignant) || 0;
-  const iotaBor = parseFloat(form.iota_borderline) || 0;
-  const iotaS1 = parseFloat(form.iota_stage1) || 0;
-  const iotaS24 = parseFloat(form.iota_stage2_4) || 0;
-  const iotaMet = parseFloat(form.iota_metastatic) || 0;
-
-  const filledIotaCount = [
-    form.iota_benign,
-    form.iota_malignant,
-    form.iota_borderline,
-    form.iota_stage1,
-    form.iota_stage2_4,
-    form.iota_metastatic,
-  ].filter((v) => v !== "" && !isNaN(parseFloat(v))).length;
-
+  // Study entry convention: six independent input boxes total 100%.
+  const iotaValues = [form.iota_benign, form.iota_malignant, form.iota_borderline, form.iota_stage1, form.iota_stage2_4, form.iota_metastatic];
+  const filledIotaCount = iotaValues.filter(value => value !== "" && value !== null && value !== undefined).length;
   const hasAnyIota = filledIotaCount > 0;
-
-  // Tổng trực tiếp cả 6 ô
-  const iotaTotalSum = parseFloat((iotaB + iotaM + iotaBor + iotaS1 + iotaS24 + iotaMet).toFixed(1));
-
-  // Kiểm tra trường hợp chuẩn IOTA ADNEX (Lành + Ác = 100%, và 4 thể con = Ác)
-  const hasSubIota = [form.iota_borderline, form.iota_stage1, form.iota_stage2_4, form.iota_metastatic].some(
-    (v) => v !== "" && !isNaN(parseFloat(v))
-  );
-  const subIotaSum = parseFloat((iotaBor + iotaS1 + iotaS24 + iotaMet).toFixed(1));
-  const isClinicalIota100 =
-    form.iota_benign !== "" &&
-    form.iota_malignant !== "" &&
-    Math.abs(iotaB + iotaM - 100) < 0.1 &&
-    (!hasSubIota || Math.abs(subIotaSum - iotaM) < 0.1);
-
-  // Miễn điền sao cho tổng bằng đúng 100% (hoặc tổng 6 ô = 100%, hoặc chuẩn IOTA = 100%)
-  const isIotaSumValid = hasAnyIota && (Math.abs(iotaTotalSum - 100) < 0.1 || isClinicalIota100);
+  const iotaNumbersValid = iotaValues.filter(value => value !== "" && value !== null && value !== undefined)
+    .every(value => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100);
+  const iotaTotal = iotaValues.reduce((total: number, value) => total + Number(value === "" || value == null ? 0 : value), 0);
+  const formatIota = (value: number) => Number.isFinite(value) ? value.toLocaleString("vi-VN", {maximumFractionDigits: 6}) : "—";
+  const isIotaSumValid = filledIotaCount === 6 && iotaNumbersValid && Math.abs(iotaTotal - 100) <= 0.000000001;
   const isIotaSumInvalid = hasAnyIota && !isIotaSumValid;
-  const currentIotaSum = isClinicalIota100 && Math.abs(iotaTotalSum - 100) >= 0.1 ? 100 : iotaTotalSum;
-
-  const handleAutoBalanceIota = () => {
-    const diff = parseFloat((100 - iotaTotalSum).toFixed(1));
-    if (diff === 0) return;
-
-    if (form.iota_benign !== "") {
-      const newB = Math.max(0, parseFloat((iotaB + diff).toFixed(1)));
-      setForm((prev) => ({ ...prev, iota_benign: String(newB) }));
-    } else if (form.iota_malignant !== "") {
-      const newM = Math.max(0, parseFloat((iotaM + diff).toFixed(1)));
-      setForm((prev) => ({ ...prev, iota_malignant: String(newM), sa_iota_adnex: String(newM) }));
-    } else {
-      const others = iotaTotalSum - iotaB;
-      const newB = Math.max(0, parseFloat((100 - others).toFixed(1)));
-      setForm((prev) => ({ ...prev, iota_benign: String(newB) }));
-    }
-  };
+  const iotaError = !iotaNumbersValid
+    ? "Mỗi ô phải là số từ 0 đến 100%."
+    : filledIotaCount < 6
+      ? `Đã nhập ${filledIotaCount}/6 ô, tổng hiện tại ${formatIota(iotaTotal)}%. Vui lòng nhập đủ 6 ô; không dùng ô trống thay cho giá trị 0.`
+      : `Tổng 6 ô hiện là ${formatIota(iotaTotal)}% — ${iotaTotal > 100 ? "vượt" : "thiếu"} ${formatIota(Math.abs(iotaTotal - 100))} điểm phần trăm. Theo quy ước phiếu, tổng phải bằng 100%.`;
 
   const handleResetIota = () => {
     setForm((prev) => ({
@@ -608,8 +304,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
     }));
   };
 
-  // Field counts
-  const countSec1 = [form.so_hs, form.ho_ten, form.nam_sinh, form.dia_chi, form.nghe_nghiep].filter(Boolean).length;
+  // Count valid zero values as entered data as well.
+  const isEntered = (value: unknown) => typeof value === "boolean" ? value : Array.isArray(value) ? value.length > 0 : value !== "" && value !== undefined && value !== null;
+  const countSec1 = [form.so_hs, form.ho_ten, form.nam_sinh, form.nam_kham, form.dia_chi, form.nghe_nghiep].filter(isEntered).length;
   const countSec2 = [
     form.tuoi_phau_thuat,
     form.para,
@@ -619,17 +316,10 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
     form.tien_can_ung_thu_khac,
     form.tien_can_lac_nmtc,
     form.co_thai,
-    form.ubt_xoan,
-    form.ubt_vo,
     form.ubt_nhiem_trung,
-  ].filter(Boolean).length;
-  const countSec3 = [form.ca_125, form.he4, form.roma, form.afp, form.beta_hcg].filter(Boolean).length;
-  const isIotaFilled = Boolean(
-    form.sa_iota_adnex ||
-    form.iota_benign ||
-    form.iota_malignant ||
-    (form.iota_borderline && form.iota_stage1)
-  );
+  ].filter(isEntered).length;
+  const countSec3 = [form.ca_125, form.he4, form.roma, form.afp, form.beta_hcg].filter(isEntered).length;
+  const isIotaFilled = hasAnyIota || isEntered(form.sa_iota_adnex);
   const countSec4 = [
     form.sa_so_luong_u,
     form.sa_mo_buong_trung,
@@ -647,222 +337,112 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
     form.sa_dich_o_bung,
     form.sa_ton_thuong_nmtc,
     isIotaFilled,
-  ].filter(Boolean).length;
+  ].filter(isEntered).length;
   const countSec5 = [
     form.mri_mo_buong_trung,
     form.mri_so_luong_u,
     form.mri_dang_ton_thuong,
     form.mri_kich_thuoc_u,
-    form.mri_dich_nang,
+    form.mri_dich_nang || form.mri_dich_nang_t1w || form.mri_dich_nang_t2w,
     form.mri_thanh_phan_mo,
     form.mri_phan_dac,
     form.mri_kich_thuoc_phan_dac,
     form.mri_khuech_tan,
+    form.mri_tang_sinh_mach_mau,
     form.mri_ngam_thuoc,
     form.mri_hach,
     form.mri_dich_o_bung,
     form.mri_ton_thuong_co_quan_khac,
     form.sa_orads,
     form.mri_ket_luan,
-  ].filter(Boolean).length;
+  ].filter(isEntered).length;
   const countSec6 = [
     form.pt_chan_doan_truoc,
     form.pt_chan_doan_sau,
     (Array.isArray(form.pt_phuong_phap) ? form.pt_phuong_phap.length > 0 : Boolean(form.pt_phuong_phap)),
     form.pt_sinh_thiet_lanh,
-    form.pt_dich_o_bung,
     form.pt_ton_thuong,
-  ].filter(Boolean).length;
-  const countSec7 = selectedPathologyId ? 1 : 0;
+    form.ubt_xoan,
+    form.ubt_vo,
+  ].filter(isEntered).length;
+  const countSec7 = Number(Boolean(selectedPathologyId)) + Number(Boolean(secondPathologyId));
 
-  const totalFilled = Math.min(53, countSec1 + countSec2 + countSec3 + countSec4 + countSec5 + countSec7);
-  const progressPercent = Math.min(100, Math.round((totalFilled / 53) * 100));
+  const totalFilled = countSec1 + countSec2 + countSec3 + countSec4 + countSec5 + countSec6 + countSec7;
+  const progressPercent = Math.min(100, Math.round((totalFilled / 61) * 100));
+  const sectionNavigation: {key: keyof typeof sectionRefs; roman: string; label: string; short: string; filled: number; total: number}[] = [
+    {key:"meta",roman:"#",label:"Mã phiếu",short:"Mã phiếu",filled:[form.hospital_code,form.study_phase].filter(isEntered).length,total:2},
+    {key:"sec1",roman:"I",label:"Hành chính",short:"Hành chính",filled:countSec1,total:6},
+    {key:"sec2",roman:"II",label:"Tiền sử & lâm sàng",short:"Lâm sàng",filled:countSec2,total:9},
+    {key:"sec3",roman:"III",label:"Dấu ấn sinh học",short:"Markers",filled:countSec3,total:5},
+    {key:"sec4",roman:"IV",label:"Siêu âm",short:"Siêu âm",filled:countSec4,total:16},
+    {key:"sec5",roman:"V",label:"Cộng hưởng từ",short:"MRI",filled:countSec5,total:16},
+    {key:"sec6",roman:"VI",label:"Phẫu thuật",short:"Phẫu thuật",filled:countSec6,total:7},
+    {key:"sec7",roman:"VII",label:"Giải phẫu bệnh WHO",short:"GPB WHO",filled:countSec7,total:2},
+  ];
+  const allSectionsOpen = sectionNavigation.filter(item => item.key !== "meta").every(item => openSections[item.key]);
+  const choiceOptions = (field: string) => {
+    const choices = (clinicalChoices[field] || []).map(String);
+    const value = String(form[field] || "");
+    return <><option value="">-- Chọn --</option>{choices.map(choice => <option key={choice} value={choice}>{choice}</option>)}{value && !choices.includes(value) && <option value={value} disabled>{value} (dữ liệu cũ)</option>}</>;
+  };
 
-  // Success view
-  if (submitSuccess) {
-    return (
-      <div className="form-container" style={{ textAlign: "center", paddingTop: "40px" }}>
-        <div className="form-card" style={{ padding: "48px 24px", maxWidth: "600px", margin: "0 auto" }}>
-          <div
-            style={{
-              width: "64px",
-              height: "64px",
-              borderRadius: "50%",
-              background: "#dcfce7",
-              color: "#16a34a",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 16px",
-            }}
-          >
-            <Check size={36} strokeWidth={3} />
-          </div>
-          <h2 style={{ fontSize: "24px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "8px" }}>
-            Đã Lưu Bệnh Án Nghiên Cứu Thành Công!
-          </h2>
-          <p style={{ color: "var(--text-secondary)", fontSize: "15.5px", marginBottom: "24px" }}>
-            Dữ liệu bệnh nhân và kết quả phân loại giải phẫu bệnh theo WHO đã được ghi nhận vào hệ thống.
-          </p>
-
-          <div
-            style={{
-              background: "#f8fafc",
-              border: "1.5px dashed #cbd5e1",
-              borderRadius: "10px",
-              padding: "18px",
-              marginBottom: "24px",
-            }}
-          >
-            <div style={{ fontSize: "13px", textTransform: "uppercase", letterSpacing: "1px", color: "#64748b", fontWeight: 600 }}>
-              Mã Phiếu Nghiên Cứu
-            </div>
-            <div style={{ fontSize: "24px", fontWeight: 700, color: "var(--primary)", marginTop: "4px" }}>
-              {submitSuccess}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="btn-submit"
-              onClick={() => {
-                setSubmitSuccess(null);
-                setForm((prev) => ({ ...prev, so_hs: "", ho_ten: "" }));
-              }}
-            >
-              + Nhập bệnh nhân mới
-            </button>
-            <button
-              type="button"
-              className="btn-secondary btn-excel"
-              onClick={exportToCSV}
-            >
-              <Download size={17} /> Tải CSV
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="form-container">
-      {/* 1. Header Card (Sạch sẽ, không huy hiệu màu mè, không nút thử nghiệm trên tiêu đề) */}
-      <div className="form-card header-card" style={{ marginBottom: "18px" }}>
-        <div className="form-header-actions">
-          <button type="button" className="clear-form-button" onClick={handleClearAll} disabled={isSubmitting}>
-            <Trash2 size={16} aria-hidden="true" />
-            Xóa tất cả thông tin
-          </button>
+    <div className={`form-container ${compact ? `admin-case-form ${readOnly ? "is-read-only" : "is-editable"}` : "entry-form"}`}>
+      {!compact && <header className="form-card header-card entry-header">
+        <div className="entry-header-main">
+          <span className="entry-header-icon"><FileText size={25} aria-hidden="true"/></span>
+          <div className="entry-header-copy"><span className="entry-kicker">THU THẬP DỮ LIỆU NGHIÊN CỨU</span><h1 className="form-title">Bệnh án & giải phẫu bệnh u buồng trứng</h1><p className="form-subtitle">Nhập thông tin theo hồ sơ nguồn. Các ô có dấu <b>*</b> cần điền trước khi gửi.</p></div>
+          <button type="button" className="clear-form-button" aria-label="Xóa tất cả thông tin" onClick={handleClearAll} disabled={busy || readOnly}><Trash2 size={15} aria-hidden="true"/><span>Xóa tất cả thông tin</span></button>
         </div>
-        <h1 className="form-title">
-          PHIẾU THU THẬP BỆNH ÁN & GIẢI PHẪU BỆNH U BUỒNG TRỨNG
-        </h1>
-        <p className="form-subtitle" style={{ marginBottom: "14px" }}>
-          Biểu mẫu khảo sát và nghiên cứu chuyên môn tích hợp dữ liệu Hành chính, Lâm sàng, Dấu ấn sinh học, Siêu âm (IOTA/O-RADS), Cộng hưởng từ (MRI) và Phân loại Giải phẫu bệnh theo WHO.
-        </p>
-
-        {/* Global Progress Bar */}
-        <div style={{ background: "#ffffff", padding: "14px 18px", borderRadius: "10px", border: "1.5px solid #e2e8f0" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "15px", marginBottom: "8px" }}>
-            <span style={{ fontWeight: 600, color: "#334155" }}>Tiến độ điền biểu mẫu:</span>
-            <span style={{ fontWeight: 700, color: "var(--primary)", fontSize: "16px" }}>
-              {totalFilled}/53 trường ({progressPercent}%)
-            </span>
-          </div>
-          <div style={{ width: "100%", height: "9px", background: "#f1f5f9", borderRadius: "5px", overflow: "hidden" }}>
-            <div
-              style={{
-                width: `${progressPercent}%`,
-                height: "100%",
-                background: "linear-gradient(90deg, #5c35b5 0%, #7c3aed 100%)",
-                borderRadius: "5px",
-                transition: "width 0.3s ease",
-              }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Sticky Quick Navigation Bar */}
-      <div className="sticky-nav-wrapper">
-        <div className="sticky-nav-list">
-          <button
-            type="button"
-            className={`nav-pill-btn ${activeTab === "sec1" ? "active" : ""}`}
-            onClick={() => scrollToSection("sec1")}
-          >
-            I. Hành chính
-          </button>
-          <button
-            type="button"
-            className={`nav-pill-btn ${activeTab === "sec2" ? "active" : ""}`}
-            onClick={() => scrollToSection("sec2")}
-          >
-            II. Lâm sàng
-          </button>
-          <button
-            type="button"
-            className={`nav-pill-btn ${activeTab === "sec3" ? "active" : ""}`}
-            onClick={() => scrollToSection("sec3")}
-          >
-            III. Markers
-          </button>
-          <button
-            type="button"
-            className={`nav-pill-btn ${activeTab === "sec4" ? "active" : ""}`}
-            onClick={() => scrollToSection("sec4")}
-          >
-            IV. Siêu âm
-          </button>
-          <button
-            type="button"
-            className={`nav-pill-btn ${activeTab === "sec5" ? "active" : ""}`}
-            onClick={() => scrollToSection("sec5")}
-          >
-            V. MRI
-          </button>
-          <button
-            type="button"
-            className={`nav-pill-btn ${activeTab === "sec6" ? "active" : ""}`}
-            onClick={() => scrollToSection("sec6")}
-          >
-            VI. Phẫu thuật
-          </button>
-          <button
-            type="button"
-            className={`nav-pill-btn ${activeTab === "sec7" ? "active" : ""}`}
-            onClick={() => scrollToSection("sec7")}
-            style={{ fontWeight: 600 }}
-          >
-            VII. GPB WHO
-          </button>
-        </div>
-      </div>
+        <div className="entry-progress"><div className="entry-progress-label"><span>Thông tin đã nhập</span><strong>{totalFilled}<span> / 61 mục</span></strong></div><div className="entry-progress-track" role="progressbar" aria-label="Tiến độ nhập thông tin" aria-valuemin={0} aria-valuemax={61} aria-valuenow={totalFilled}><span style={{width:`${progressPercent}%`}}/></div><p>Các mục chưa có thông tin có thể để trống.</p></div>
+      </header>}
+      <nav ref={navigationRef} className="sticky-nav-wrapper" aria-label="Các mục trong phiếu">
+        {!compact && <div className="entry-nav-heading"><strong>Các mục trong phiếu</strong><button type="button" className="entry-collapse-toggle" aria-expanded={allSectionsOpen} onClick={() => setOpenSections(prev => ({...prev,...Object.fromEntries(sectionNavigation.filter(item => item.key !== "meta").map(item => [item.key,!allSectionsOpen]))}))}>{allSectionsOpen ? "Thu gọn tất cả" : "Mở tất cả"}<ChevronDown size={14} className={allSectionsOpen ? "" : "is-collapsed"}/></button></div>}
+        <div className="sticky-nav-list">{sectionNavigation.filter(item => !compact || item.key !== "meta").map(item => <button key={item.key} type="button" className={`nav-pill-btn ${activeTab === item.key ? "active" : ""}`} aria-current={activeTab === item.key ? "step" : undefined} aria-controls={`entry-${item.key}`} onClick={() => scrollToSection(item.key)}>{compact ? `${item.roman}. ${item.short}` : <><span className="entry-nav-roman">{item.roman}</span><span className="entry-nav-label">{item.label}</span><span className="entry-nav-short">{item.short}</span><span className={`entry-nav-count ${item.filled === item.total ? "is-filled" : ""}`}>{item.filled}/{item.total}</span></>}</button>)}</div>
+      </nav>
 
       <form onSubmit={handleSubmit}>
+        <fieldset disabled={busy} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+        {(catalogError || (compact && formError)) && <p className="workflow-error" role="alert">{catalogError || formError}</p>}
+        <div ref={sectionRefs.meta} id="entry-meta" className="form-card entry-identity-card">
+          <h2>{identityVersion >= 2 || form.study_phase ? "Tạo mã phiếu" : "Đợt điều trị / phẫu thuật"}</h2>
+          {!compact && <p>Chọn bệnh viện và giai đoạn nghiên cứu. Số thứ tự được cấp tự động khi gửi phiếu.</p>}
+          {identityVersion >= 2 || form.study_phase ? <>
+          <div className="form-grid-3 study-identity-grid">
+            <label htmlFor="study-hospital">Bệnh viện *<select id="study-hospital" disabled={readOnly || busy || Boolean(studyCode)} aria-label="Bệnh viện" title={identityOptions.hospitals[form.hospital_code] || "Chọn bệnh viện"} name="hospital_code" className="form-select" value={form.hospital_code} onChange={e => handleChange("hospital_code",e.target.value)}><option value="">-- Chọn bệnh viện --</option>{Object.entries(identityOptions.hospitals).map(([code,name]) => <option key={code} value={code}>{code} — {name.replace(/^Bệnh viện /, "")}</option>)}</select></label>
+            <label htmlFor="study-phase">Giai đoạn nghiên cứu *<select id="study-phase" disabled={readOnly || busy || Boolean(studyCode)} aria-label="Giai đoạn nghiên cứu" name="study_phase" className="form-select" value={form.study_phase} onChange={e => handleChange("study_phase",e.target.value)}><option value="">-- Chọn giai đoạn --</option>{Object.entries(identityOptions.phases).map(([code,name]) => <option key={code} value={code}>{code} — {name}</option>)}</select></label>
+            <div className="study-code-field"><span className="study-code-label">Mã phiếu (tự động)</span><output className={`study-code-preview ${studyCode ? "is-issued" : ""}`} aria-label="Mã phiếu" aria-live="polite">{studyCode || (form.hospital_code && form.study_phase ? `${form.hospital_code}_${form.study_phase}_•••••` : "Được cấp khi gửi phiếu")}</output><small>{studyCode ? "Mã đã cấp được giữ nguyên." : "Số thứ tự 5 chữ số, tăng liên tục."}</small></div>
+          </div>
+          </> : <div className="form-grid-3">
+            <label>Mã bệnh viện *<input disabled={readOnly || busy} aria-label="Mã bệnh viện" name="hospital_code" className="form-input" value={form.hospital_code} maxLength={100} onChange={e => handleChange("hospital_code", e.target.value)} /></label>
+            <label>Mã đợt điều trị *<input disabled={readOnly || busy} aria-label="Mã đợt điều trị" name="encounter_code" className="form-input" value={form.encounter_code} maxLength={100} onChange={e => handleChange("encounter_code", e.target.value)} /></label>
+          </div>}
+        </div>
         {/* ============================================================== */}
         {/* MỤC I: THÔNG TIN HÀNH CHÍNH & BỆNH NHÂN */}
         {/* ============================================================== */}
         <div
           ref={sectionRefs.sec1}
+          id="entry-sec1"
           className={`section-accordion ${openSections.sec1 ? "is-open" : ""}`}
         >
           <button
             type="button"
             className="section-header-btn"
+            aria-expanded={openSections.sec1}
             onClick={() => toggleSection("sec1")}
           >
             <div className="section-header-left">
               <span className="section-roman-badge">I</span>
               <div className="section-title-wrap">
-                <h3>THÔNG TIN HÀNH CHÍNH & BỆNH NHÂN</h3>
+                <h3>{compact ? "Thông tin bệnh nhân" : "Thông tin hành chính & bệnh nhân"}</h3>
               </div>
             </div>
             <div className="section-header-right">
-              <span className={`section-count-badge ${countSec1 === 5 ? "is-complete" : ""}`}>
-                {countSec1}/5 câu
+              <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
+              <span className={`section-count-badge ${countSec1 === 6 ? "is-complete" : ""}`}>
+                {countSec1}/6 câu
               </span>
             </div>
           </button>
@@ -872,8 +452,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
               <div className="form-grid-3">
                 {/* 1. Số HS */}
                 <div className="form-item">
-                  <label className="field-label">Số HS</label>
-                  <input
+                  <label className="field-label" htmlFor="entry-so_hs">Số HS *</label>
+                  <input id="entry-so_hs" disabled={readOnly || busy} aria-label="Số HS" name="so_hs"
                     type="text"
                     className="form-input"
                     value={form.so_hs}
@@ -883,8 +463,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 2. Họ Tên */}
                 <div className="form-item">
-                  <label className="field-label">Họ Tên</label>
-                  <input
+                  <label className="field-label" htmlFor="entry-ho_ten">Họ Tên</label>
+                  <input id="entry-ho_ten" disabled={readOnly || busy} aria-label="Họ Tên" name="ho_ten"
                     type="text"
                     className="form-input"
                     value={form.ho_ten}
@@ -894,9 +474,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 3. Năm Sinh */}
                 <div className="form-item">
-                  <label className="field-label">Năm Sinh</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-nam_sinh">Năm Sinh</label>
+                  <input id="entry-nam_sinh" disabled={readOnly || busy} aria-label="Năm Sinh" name="nam_sinh"
+                    type="number" min="1900" max={new Date().getFullYear()}
                     className="form-input"
                     value={form.nam_sinh}
                     onChange={(e) => handleChange("nam_sinh", e.target.value)}
@@ -905,9 +485,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* Năm Khám */}
                 <div className="form-item">
-                  <label className="field-label">Năm Khám</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-nam_kham">Năm Khám</label>
+                  <input id="entry-nam_kham" disabled={readOnly || busy} aria-label="Năm Khám" name="nam_kham"
+                    type="number" min="1900" max={new Date().getFullYear()}
                     className="form-input"
                     value={form.nam_kham}
                     onChange={(e) => handleChange("nam_kham", e.target.value)}
@@ -916,8 +496,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 4. Địa chỉ */}
                 <div className="form-item">
-                  <label className="field-label">Địa chỉ</label>
-                  <input
+                  <label className="field-label" htmlFor="entry-dia_chi">Địa chỉ</label>
+                  <input id="entry-dia_chi" disabled={readOnly || busy} aria-label="Địa chỉ" name="dia_chi"
                     type="text"
                     className="form-input"
                     value={form.dia_chi}
@@ -927,8 +507,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 5. Nghề nghiệp */}
                 <div className="form-item">
-                  <label className="field-label">Nghề nghiệp</label>
-                  <input
+                  <label className="field-label" htmlFor="entry-nghe_nghiep">Nghề nghiệp</label>
+                  <input id="entry-nghe_nghiep" disabled={readOnly || busy} aria-label="Nghề nghiệp" name="nghe_nghiep"
                     type="text"
                     className="form-input"
                     value={form.nghe_nghiep}
@@ -945,22 +525,25 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
         {/* ============================================================== */}
         <div
           ref={sectionRefs.sec2}
+          id="entry-sec2"
           className={`section-accordion ${openSections.sec2 ? "is-open" : ""}`}
         >
           <button
             type="button"
             className="section-header-btn"
+            aria-expanded={openSections.sec2}
             onClick={() => toggleSection("sec2")}
           >
             <div className="section-header-left">
               <span className="section-roman-badge">II</span>
               <div className="section-title-wrap">
-                <h3>TIỀN SỬ & LÂM SÀNG</h3>
+                <h3>{compact ? "Tiền sử và lâm sàng" : "Tiền sử & lâm sàng"}</h3>
               </div>
             </div>
             <div className="section-header-right">
-              <span className={`section-count-badge ${countSec2 === 11 ? "is-complete" : ""}`}>
-                {countSec2}/11 câu
+              <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
+              <span className={`section-count-badge ${countSec2 === 9 ? "is-complete" : ""}`}>
+                {countSec2}/9 câu
               </span>
             </div>
           </button>
@@ -970,9 +553,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
               <div className="form-grid-3">
                 {/* 6. Tuổi BN khi phẫu thuật */}
                 <div className="form-item">
-                  <label className="field-label">Tuổi BN khi phẫu thuật</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-tuoi_phau_thuat">Tuổi BN khi phẫu thuật</label>
+                  <input id="entry-tuoi_phau_thuat" disabled={readOnly || busy} aria-label="Tuổi BN khi phẫu thuật" name="tuoi_phau_thuat"
+                    type="number" min="0" max="130"
                     className="form-input"
                     value={form.tuoi_phau_thuat}
                     onChange={(e) => handleChange("tuoi_phau_thuat", e.target.value)}
@@ -981,11 +564,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 7. PARA */}
                 <div className="form-item">
-                  <label className="field-label">
-                    <span>PARA</span>
-                    <span className="field-hint">(Ví dụ: 0000, 2002)</span>
-                  </label>
-                  <input
+                  <label className="field-label" htmlFor="para">PARA</label>
+                  <input disabled={readOnly || busy} id="para" aria-label="PARA" aria-describedby="para-hint" name="para"
                     type="text"
                     className="form-input"
                     maxLength={4}
@@ -999,17 +579,18 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                       }
                     }}
                   />
+                  <span id="para-hint" className="field-hint field-helper">Ví dụ: 0000, 2002</span>
                 </div>
 
                 {/* 8. Kinh nguyệt */}
                 <div className="form-item">
-                  <label className="field-label">Kinh nguyệt</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-kinh_nguyet">Kinh nguyệt</label>
+                  <select id="entry-kinh_nguyet" disabled={readOnly || busy} aria-label="Kinh nguyệt" name="kinh_nguyet"
                     className="form-select"
                     value={form.kinh_nguyet}
                     onChange={(e) => handleChange("kinh_nguyet", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Còn hành kinh">Còn hành kinh</option>
                     <option value="Đã mãn kinh">Đã mãn kinh</option>
                   </select>
@@ -1017,13 +598,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 9. Thời điểm phát hiện UBT */}
                 <div className="form-item form-col-span-full">
-                  <label className="field-label">Thời điểm phát hiện UBT</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-thoi_diem_phat_hien">Thời điểm phát hiện UBT</label>
+                  <select id="entry-thoi_diem_phat_hien" disabled={readOnly || busy} aria-label="Thời điểm phát hiện UBT" name="thoi_diem_phat_hien"
                     className="form-select"
                     value={form.thoi_diem_phat_hien}
                     onChange={(e) => handleChange("thoi_diem_phat_hien", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Mới phát hiện">Mới phát hiện</option>
                     <option value="Đã biết > 3 tháng, không có sự thay đổi kích thước u">
                       Đã biết &gt; 3 tháng, không có sự thay đổi kích thước u
@@ -1040,23 +621,23 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 10. Tiền căn phẫu thuật UBT */}
                 <div className="form-item">
-                  <label className="field-label">Tiền căn phẫu thuật UBT</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-tien_can_phau_thuat_ubt">Tiền căn phẫu thuật UBT</label>
+                  <select id="entry-tien_can_phau_thuat_ubt" disabled={readOnly || busy} aria-label="Tiền căn phẫu thuật UBT" name="tien_can_phau_thuat_ubt"
                     className="form-select"
                     value={form.tien_can_phau_thuat_ubt}
                     onChange={(e) => handleChange("tien_can_phau_thuat_ubt", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                     <option value="Ghi chú GPB nếu có">Ghi chú GPB nếu có</option>
                   </select>
                   {(form.tien_can_phau_thuat_ubt === "Có" || form.tien_can_phau_thuat_ubt === "Ghi chú GPB nếu có") && (
                     <div className="conditional-box">
-                      <label style={{ fontSize: "14px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                      <label className="conditional-box-label">
                         Ghi chú GPB nếu có
                       </label>
-                      <input
+                      <input disabled={readOnly || busy} aria-label="tien_can_phau_thuat_ubt_ghi_chu" name="tien_can_phau_thuat_ubt_ghi_chu"
                         type="text"
                         className="form-input"
                         placeholder="Nhập ghi chú GPB nếu có..."
@@ -1069,23 +650,23 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 11. Tiền căn ung thư khác */}
                 <div className="form-item">
-                  <label className="field-label">Tiền căn ung thư khác</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-tien_can_ung_thu_khac">Tiền căn ung thư khác</label>
+                  <select id="entry-tien_can_ung_thu_khac" disabled={readOnly || busy} aria-label="Tiền căn ung thư khác" name="tien_can_ung_thu_khac"
                     className="form-select"
                     value={form.tien_can_ung_thu_khac}
                     onChange={(e) => handleChange("tien_can_ung_thu_khac", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                     <option value="Ghi chú loại ung thư nếu có">Ghi chú loại ung thư nếu có</option>
                   </select>
                   {(form.tien_can_ung_thu_khac === "Có" || form.tien_can_ung_thu_khac === "Ghi chú loại ung thư nếu có") && (
                     <div className="conditional-box">
-                      <label style={{ fontSize: "14px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                      <label className="conditional-box-label">
                         Ghi chú loại ung thư nếu có
                       </label>
-                      <input
+                      <input disabled={readOnly || busy} aria-label="tien_can_ung_thu_khac_ghi_chu" name="tien_can_ung_thu_khac_ghi_chu"
                         type="text"
                         className="form-input"
                         placeholder="Nhập ghi chú loại ung thư..."
@@ -1098,13 +679,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 12. Tiền căn lạc nội mạc tử cung */}
                 <div className="form-item">
-                  <label className="field-label">Tiền căn lạc nội mạc tử cung</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-tien_can_lac_nmtc">Tiền căn lạc nội mạc tử cung</label>
+                  <select id="entry-tien_can_lac_nmtc" disabled={readOnly || busy} aria-label="Tiền căn lạc nội mạc tử cung" name="tien_can_lac_nmtc"
                     className="form-select"
                     value={form.tien_can_lac_nmtc}
                     onChange={(e) => handleChange("tien_can_lac_nmtc", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
@@ -1112,41 +693,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 13. Có thai */}
                 <div className="form-item">
-                  <label className="field-label">Có thai</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-co_thai">Có thai</label>
+                  <select id="entry-co_thai" disabled={readOnly || busy} aria-label="Có thai" name="co_thai"
                     className="form-select"
                     value={form.co_thai}
                     onChange={(e) => handleChange("co_thai", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
-                    <option value="Không">Không</option>
-                    <option value="Có">Có</option>
-                  </select>
-                </div>
-
-                {/* 14. UBT xoắn */}
-                <div className="form-item">
-                  <label className="field-label">UBT xoắn</label>
-                  <select
-                    className="form-select"
-                    value={form.ubt_xoan}
-                    onChange={(e) => handleChange("ubt_xoan", e.target.value)}
-                  >
-                    <option value="" disabled>-- Chọn --</option>
-                    <option value="Không">Không</option>
-                    <option value="Có">Có</option>
-                  </select>
-                </div>
-
-                {/* 15. UBT vỡ */}
-                <div className="form-item">
-                  <label className="field-label">UBT vỡ</label>
-                  <select
-                    className="form-select"
-                    value={form.ubt_vo}
-                    onChange={(e) => handleChange("ubt_vo", e.target.value)}
-                  >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
@@ -1154,13 +707,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 16. UBT nhiễm trùng */}
                 <div className="form-item">
-                  <label className="field-label">UBT nhiễm trùng</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-ubt_nhiem_trung">UBT nhiễm trùng</label>
+                  <select id="entry-ubt_nhiem_trung" disabled={readOnly || busy} aria-label="UBT nhiễm trùng" name="ubt_nhiem_trung"
                     className="form-select"
                     value={form.ubt_nhiem_trung}
                     onChange={(e) => handleChange("ubt_nhiem_trung", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
@@ -1175,20 +728,23 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
         {/* ============================================================== */}
         <div
           ref={sectionRefs.sec3}
+          id="entry-sec3"
           className={`section-accordion ${openSections.sec3 ? "is-open" : ""}`}
         >
           <button
             type="button"
             className="section-header-btn"
+            aria-expanded={openSections.sec3}
             onClick={() => toggleSection("sec3")}
           >
             <div className="section-header-left">
               <span className="section-roman-badge">III</span>
               <div className="section-title-wrap">
-                <h3>DẤU ẤN SINH HỌC</h3>
+                <h3>{compact ? "Dấu ấn sinh học" : "Dấu ấn sinh học"}</h3>
               </div>
             </div>
             <div className="section-header-right">
+              <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
               <span className={`section-count-badge ${countSec3 === 5 ? "is-complete" : ""}`}>
                 {countSec3}/5 câu
               </span>
@@ -1200,9 +756,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
               <div className="form-grid-3">
                 {/* 17. CA 125 */}
                 <div className="form-item">
-                  <label className="field-label">CA 125</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-ca_125">CA 125</label>
+                  <input id="entry-ca_125" disabled={readOnly || busy} aria-label="CA 125" name="ca_125"
+                    type="number" min="0"
                     step="any"
                     className="form-input"
                     value={form.ca_125}
@@ -1212,9 +768,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 18. HE4 */}
                 <div className="form-item">
-                  <label className="field-label">HE4</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-he4">HE4</label>
+                  <input id="entry-he4" disabled={readOnly || busy} aria-label="HE4" name="he4"
+                    type="number" min="0"
                     step="any"
                     className="form-input"
                     value={form.he4}
@@ -1224,9 +780,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 19. ROMA */}
                 <div className="form-item">
-                  <label className="field-label">ROMA</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-roma">ROMA</label>
+                  <input id="entry-roma" disabled={readOnly || busy} aria-label="ROMA" name="roma"
+                    type="number" min="0" max="100"
                     step="any"
                     className="form-input"
                     value={form.roma}
@@ -1236,9 +792,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 20. AFP */}
                 <div className="form-item">
-                  <label className="field-label">AFP</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-afp">AFP</label>
+                  <input id="entry-afp" disabled={readOnly || busy} aria-label="AFP" name="afp"
+                    type="number" min="0"
                     step="any"
                     className="form-input"
                     value={form.afp}
@@ -1248,9 +804,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 21. beta hCG */}
                 <div className="form-item">
-                  <label className="field-label">beta hCG</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-beta_hcg">beta hCG</label>
+                  <input id="entry-beta_hcg" disabled={readOnly || busy} aria-label="beta hCG" name="beta_hcg"
+                    type="number" min="0"
                     step="any"
                     className="form-input"
                     value={form.beta_hcg}
@@ -1267,20 +823,23 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
         {/* ============================================================== */}
         <div
           ref={sectionRefs.sec4}
+          id="entry-sec4"
           className={`section-accordion ${openSections.sec4 ? "is-open" : ""}`}
         >
           <button
             type="button"
             className="section-header-btn"
+            aria-expanded={openSections.sec4}
             onClick={() => toggleSection("sec4")}
           >
             <div className="section-header-left">
               <span className="section-roman-badge">IV</span>
               <div className="section-title-wrap">
-                <h3>ĐẶC ĐIỂM SIÊU ÂM</h3>
+                <h3>{compact ? "Siêu âm" : "Đặc điểm siêu âm"}</h3>
               </div>
             </div>
             <div className="section-header-right">
+              <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
               <span className={`section-count-badge ${countSec4 === 16 ? "is-complete" : ""}`}>
                 {countSec4}/16 câu
               </span>
@@ -1292,27 +851,25 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
               <div className="form-grid-2">
                 {/* 22. Số lượng u */}
                 <div className="form-item">
-                  <label className="field-label">Số lượng u</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_so_luong_u">Số lượng u</label>
+                  <select id="entry-sa_so_luong_u" disabled={readOnly || busy} aria-label="Số lượng u (Siêu âm)" name="sa_so_luong_u"
                     className="form-select"
                     value={form.sa_so_luong_u}
                     onChange={(e) => handleChange("sa_so_luong_u", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
-                    <option value="1 bên">1 bên</option>
-                    <option value="2 bên">2 bên</option>
+                    {choiceOptions("sa_so_luong_u")}
                   </select>
                 </div>
 
                 {/* 23. Mô buồng trứng */}
                 <div className="form-item">
-                  <label className="field-label">Mô buồng trứng</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_mo_buong_trung">Mô buồng trứng</label>
+                  <select id="entry-sa_mo_buong_trung" disabled={readOnly || busy} aria-label="Mô buồng trứng (Siêu âm)" name="sa_mo_buong_trung"
                     className="form-select"
                     value={form.sa_mo_buong_trung}
                     onChange={(e) => handleChange("sa_mo_buong_trung", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Còn">Còn</option>
                     <option value="Không quan sát thấy">Không quan sát thấy</option>
                     <option value="Không đánh giá">Không đánh giá</option>
@@ -1321,13 +878,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 24. Phân loại u */}
                 <div className="form-item">
-                  <label className="field-label">Phân loại u</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_phan_loai_u">Phân loại u</label>
+                  <select id="entry-sa_phan_loai_u" disabled={readOnly || busy} aria-label="Phân loại u (Siêu âm)" name="sa_phan_loai_u"
                     className="form-select"
                     value={form.sa_phan_loai_u}
                     onChange={(e) => handleChange("sa_phan_loai_u", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Đơn thùy">Đơn thùy</option>
                     <option value="Đơn thùy đặc">Đơn thùy đặc</option>
                     <option value="Đa thùy">Đa thùy</option>
@@ -1347,7 +904,7 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                         <button
                           key={opt}
                           type="button"
-                          className={`toggle-chip ${isChecked ? "active" : ""}`}
+                          disabled={readOnly || busy} aria-pressed={isChecked} className={`toggle-chip ${isChecked ? "active" : ""}`}
                           onClick={() => handleCheckboxMulti("sa_phan_am", opt)}
                         >
                           {isChecked && <Check size={16} />} {opt}
@@ -1359,9 +916,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 26. Kích thước u */}
                 <div className="form-item">
-                  <label className="field-label">Kích thước u</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-sa_kich_thuoc_u">Kích thước u</label>
+                  <input id="entry-sa_kich_thuoc_u" disabled={readOnly || busy} aria-label="Kích thước u (Siêu âm)" name="sa_kich_thuoc_u"
+                    type="number" min="0"
                     className="form-input"
                     value={form.sa_kich_thuoc_u}
                     onChange={(e) => handleChange("sa_kich_thuoc_u", e.target.value)}
@@ -1370,13 +927,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 27. Bờ ngoài */}
                 <div className="form-item">
-                  <label className="field-label">Bờ ngoài</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_bo_ngoai">Bờ ngoài</label>
+                  <select id="entry-sa_bo_ngoai" disabled={readOnly || busy} aria-label="Bờ ngoài" name="sa_bo_ngoai"
                     className="form-select"
                     value={form.sa_bo_ngoai}
                     onChange={(e) => handleChange("sa_bo_ngoai", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không đều">Không đều</option>
                     <option value="Đều">Đều</option>
                     <option value="Không đánh giá">Không đánh giá</option>
@@ -1385,13 +942,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 28. Bờ trong */}
                 <div className="form-item">
-                  <label className="field-label">Bờ trong</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_bo_trong">Bờ trong</label>
+                  <select id="entry-sa_bo_trong" disabled={readOnly || busy} aria-label="Bờ trong" name="sa_bo_trong"
                     className="form-select"
                     value={form.sa_bo_trong}
                     onChange={(e) => handleChange("sa_bo_trong", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không trơn láng">Không trơn láng</option>
                     <option value="Trơn láng">Trơn láng</option>
                     <option value="Không đánh giá">Không đánh giá</option>
@@ -1400,13 +957,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 29. Số lượng thùy */}
                 <div className="form-item">
-                  <label className="field-label">Số lượng thùy</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_so_luong_thuy">Số lượng thùy</label>
+                  <select id="entry-sa_so_luong_thuy" disabled={readOnly || busy} aria-label="Số lượng thùy" name="sa_so_luong_thuy"
                     className="form-select"
                     value={form.sa_so_luong_thuy}
                     onChange={(e) => handleChange("sa_so_luong_thuy", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="0">0 (u đặc / không thùy)</option>
                     <option value="1">1</option>
                     <option value="2-10">2-10</option>
@@ -1416,9 +973,9 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 30. Kích thước phần đặc */}
                 <div className="form-item">
-                  <label className="field-label">Kích thước phần đặc</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-sa_kich_thuoc_phan_dac">Kích thước phần đặc</label>
+                  <input id="entry-sa_kich_thuoc_phan_dac" disabled={readOnly || busy} aria-label="Kích thước phần đặc (Siêu âm)" name="sa_kich_thuoc_phan_dac"
+                    type="number" min="0"
                     className="form-input"
                     value={form.sa_kich_thuoc_phan_dac}
                     onChange={(e) => handleChange("sa_kich_thuoc_phan_dac", e.target.value)}
@@ -1427,13 +984,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 31. Bóng lưng */}
                 <div className="form-item">
-                  <label className="field-label">Bóng lưng</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_bong_lung">Bóng lưng</label>
+                  <select id="entry-sa_bong_lung" disabled={readOnly || busy} aria-label="Bóng lưng" name="sa_bong_lung"
                     className="form-select"
                     value={form.sa_bong_lung}
                     onChange={(e) => handleChange("sa_bong_lung", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
@@ -1441,8 +998,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 32. Nang trong phần đặc */}
                 <div className="form-item">
-                  <label className="field-label">Nang trong phần đặc</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_nang_trong_phan_dac">Nang trong phần đặc</label>
+                  <select id="entry-sa_nang_trong_phan_dac" disabled={readOnly || busy} aria-label="Nang trong phần đặc" name="sa_nang_trong_phan_dac"
                     className="form-select"
                     value={form.sa_nang_trong_phan_dac ? (form.sa_nang_trong_phan_dac === "Không" ? "Không" : "Có") : ""}
                     onChange={(e) => {
@@ -1453,16 +1010,16 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                       }
                     }}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
                   {form.sa_nang_trong_phan_dac === "Có" && (
                     <div className="conditional-box">
-                      <label style={{ fontSize: "14px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                      <label className="conditional-box-label">
                         Có bao nhiêu nang trong phần đặc?
                       </label>
-                      <input
+                      <input disabled={readOnly || busy} aria-label="sa_nang_trong_phan_dac_so_luong" name="sa_nang_trong_phan_dac_so_luong"
                         type="text"
                         className="form-input"
                         placeholder="Ví dụ: 1 nang, 2 nang, nhiều nang nhỏ..."
@@ -1475,8 +1032,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 33. Chồi */}
                 <div className="form-item">
-                  <label className="field-label">Chồi</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_choi">Chồi</label>
+                  <select id="entry-sa_choi" disabled={readOnly || busy} aria-label="Chồi" name="sa_choi"
                     className="form-select"
                     value={form.sa_choi ? (form.sa_choi === "Không" ? "Không" : "Có") : ""}
                     onChange={(e) => {
@@ -1488,21 +1045,21 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                       }
                     }}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
                   {form.sa_choi !== "Không" && Boolean(form.sa_choi) && (
                     <div className="conditional-box">
-                      <label style={{ fontSize: "14px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                      <label className="conditional-box-label">
                         Có bao nhiêu chồi?
                       </label>
-                      <select
+                      <select disabled={readOnly || busy}
                         className="form-select"
                         value={["1", "2", "3", ">3"].includes(form.sa_choi) ? form.sa_choi : "1"}
                         onChange={(e) => handleChange("sa_choi", e.target.value)}
                       >
-                        <option value="" disabled>-- Chọn --</option>
+                        <option value="">-- Chọn --</option>
                         <option value="1">1 chồi</option>
                         <option value="2">2 chồi</option>
                         <option value="3">3 chồi</option>
@@ -1514,13 +1071,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 34. Tăng sinh mạch máu */}
                 <div className="form-item">
-                  <label className="field-label">Tăng sinh mạch máu</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_tang_sinh_mach_mau">Tăng sinh mạch máu</label>
+                  <select id="entry-sa_tang_sinh_mach_mau" disabled={readOnly || busy} aria-label="Tăng sinh mạch máu" name="sa_tang_sinh_mach_mau"
                     className="form-select"
                     value={form.sa_tang_sinh_mach_mau}
                     onChange={(e) => handleChange("sa_tang_sinh_mach_mau", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không tăng sinh">Không tăng sinh (0)</option>
                     <option value="1">1</option>
                     <option value="2">2</option>
@@ -1532,13 +1089,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 35. Dịch ổ bụng */}
                 <div className="form-item">
-                  <label className="field-label">Dịch ổ bụng</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_dich_o_bung">Dịch ổ bụng</label>
+                  <select id="entry-sa_dich_o_bung" disabled={readOnly || busy} aria-label="Dịch ổ bụng (Siêu âm)" name="sa_dich_o_bung"
                     className="form-select"
                     value={form.sa_dich_o_bung}
                     onChange={(e) => handleChange("sa_dich_o_bung", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Cùng đồ">Cùng đồ</option>
                     <option value="2 hố chậu">2 hố chậu</option>
@@ -1549,8 +1106,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 36. Tổn thương NMTC */}
                 <div className="form-item">
-                  <label className="field-label">Tổn thương NMTC</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_ton_thuong_nmtc">Tổn thương NMTC</label>
+                  <select id="entry-sa_ton_thuong_nmtc" disabled={readOnly || busy} aria-label="Tổn thương NMTC" name="sa_ton_thuong_nmtc"
                     className="form-select"
                     value={form.sa_ton_thuong_nmtc}
                     onChange={(e) => {
@@ -1561,16 +1118,16 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                       }
                     }}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
                   {form.sa_ton_thuong_nmtc === "Có" && (
                     <div className="conditional-box">
-                      <label style={{ fontSize: "14px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                      <label className="conditional-box-label">
                         Ghi chú tổn thương tử cung
                       </label>
-                      <input
+                      <input disabled={readOnly || busy} aria-label="sa_ton_thuong_nmtc_ghi_chu" name="sa_ton_thuong_nmtc_ghi_chu"
                         type="text"
                         className="form-input"
                         placeholder="Nhập ghi chú tổn thương tử cung..."
@@ -1583,66 +1140,29 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 37. IOTA ADNEX (Miễn tổng 6 mục đủ 100% là hợp lệ) */}
                 <div className="form-item form-col-span-full">
-                  <div
-                    style={{
-                      background: "#f8fafc",
-                      border: "1.5px solid #cbd5e1",
-                      borderRadius: "12px",
-                      padding: "20px 22px",
-                      marginTop: "6px",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+                  <div className="iota-panel">
+                    <div className="iota-panel-header">
                       <div>
-                        <label className="field-label" style={{ fontSize: "16.5px", color: "var(--primary)", margin: 0 }}>
+                        <label className="iota-panel-title">
                           IOTA ADNEX
                         </label>
-                        <div style={{ fontSize: "13px", color: "#64748b", marginTop: "2px" }}>
-                          (Miễn điền sao cho tổng các mục bằng đúng 100%)
+                        <div className="iota-panel-desc">
+                          Quy ước riêng của phiếu nghiên cứu: tổng cả 6 ô phải bằng 100%.
                         </div>
                       </div>
 
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         {isIotaSumInvalid ? (
-                          <span
-                            style={{
-                              fontSize: "13.5px",
-                              fontWeight: 600,
-                              color: "#b91c1c",
-                              background: "#fee2e2",
-                              border: "1px solid #f87171",
-                              padding: "4px 12px",
-                              borderRadius: "12px",
-                            }}
-                          >
-                            ⚠️ Tổng: {currentIotaSum}% ({currentIotaSum > 100 ? "Thừa" : "Thiếu"} {Math.abs(parseFloat((100 - currentIotaSum).toFixed(1)))}%)
+                          <span className="iota-status-pill is-invalid">
+                            ⚠️ Tổng 6 ô: {formatIota(iotaTotal)}%
                           </span>
                         ) : isIotaSumValid ? (
-                          <span
-                            style={{
-                              fontSize: "13.5px",
-                              fontWeight: 600,
-                              color: "#15803d",
-                              background: "#dcfce7",
-                              border: "1px solid #86efac",
-                              padding: "4px 12px",
-                              borderRadius: "12px",
-                            }}
-                          >
-                            Tổng 6 mục: 100% (Hợp lệ)
+                          <span className="iota-status-pill is-valid">
+                            ✓ Tổng 6 ô: 100%
                           </span>
                         ) : (
-                          <span
-                            style={{
-                              fontSize: "13.5px",
-                              fontWeight: 500,
-                              color: "#64748b",
-                              background: "#f1f5f9",
-                              padding: "4px 12px",
-                              borderRadius: "12px",
-                            }}
-                          >
-                            Yêu cầu Tổng 6 mục = 100%
+                          <span className="iota-status-pill is-idle">
+                            Tổng 6 ô = 100%
                           </span>
                         )}
                       </div>
@@ -1651,16 +1171,16 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                     <div className="form-grid-3">
                       {/* Benign tumor */}
                       <div className="form-item">
-                        <label className="field-label" style={{ fontSize: "14.5px" }}>Benign tumor (%)</label>
-                        <input
-                          type="number"
+                        <label className="field-label">Benign tumor (%)</label>
+                        <input disabled={readOnly || busy} aria-label="IOTA - Benign (%)" name="iota_benign"
+                          type="number" min="0" max="100"
                           step="0.1"
                           className="form-input"
                           style={
                             isIotaSumInvalid
                               ? { borderColor: "#ef4444", backgroundColor: "#fff5f5" }
                               : isIotaSumValid
-                              ? { borderColor: "#22c55e", backgroundColor: "#f0fdf4" }
+                              ? { borderColor: "#10b981", backgroundColor: "#ecfdf5" }
                               : undefined
                           }
                           value={form.iota_benign}
@@ -1670,16 +1190,16 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                       {/* Malignant */}
                       <div className="form-item">
-                        <label className="field-label" style={{ fontSize: "14.5px" }}>Malignant (%)</label>
-                        <input
-                          type="number"
+                        <label className="field-label">Malignant (%)</label>
+                        <input disabled={readOnly || busy} aria-label="IOTA - Malignant (%)" name="iota_malignant"
+                          type="number" min="0" max="100"
                           step="0.1"
                           className="form-input"
                           style={
                             isIotaSumInvalid
                               ? { borderColor: "#ef4444", backgroundColor: "#fff5f5" }
                               : isIotaSumValid
-                              ? { borderColor: "#22c55e", backgroundColor: "#f0fdf4" }
+                              ? { borderColor: "#10b981", backgroundColor: "#ecfdf5" }
                               : undefined
                           }
                           value={form.iota_malignant}
@@ -1689,16 +1209,16 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                       {/* Borderline */}
                       <div className="form-item">
-                        <label className="field-label" style={{ fontSize: "14.5px" }}>Borderline</label>
-                        <input
-                          type="number"
+                        <label className="field-label">Borderline (%)</label>
+                        <input disabled={readOnly || busy} aria-label="IOTA - Borderline (%)" name="iota_borderline"
+                          type="number" min="0" max="100"
                           step="0.1"
                           className="form-input"
                           style={
                             isIotaSumInvalid
                               ? { borderColor: "#ef4444", backgroundColor: "#fff5f5" }
                               : isIotaSumValid
-                              ? { borderColor: "#22c55e", backgroundColor: "#f0fdf4" }
+                              ? { borderColor: "#10b981", backgroundColor: "#ecfdf5" }
                               : undefined
                           }
                           value={form.iota_borderline}
@@ -1708,16 +1228,16 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                       {/* Stage I */}
                       <div className="form-item">
-                        <label className="field-label" style={{ fontSize: "14.5px" }}>Stage I</label>
-                        <input
-                          type="number"
+                        <label className="field-label">Stage I (%)</label>
+                        <input disabled={readOnly || busy} aria-label="IOTA - Stage I (%)" name="iota_stage1"
+                          type="number" min="0" max="100"
                           step="0.1"
                           className="form-input"
                           style={
                             isIotaSumInvalid
                               ? { borderColor: "#ef4444", backgroundColor: "#fff5f5" }
                               : isIotaSumValid
-                              ? { borderColor: "#22c55e", backgroundColor: "#f0fdf4" }
+                              ? { borderColor: "#10b981", backgroundColor: "#ecfdf5" }
                               : undefined
                           }
                           value={form.iota_stage1}
@@ -1727,16 +1247,16 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                       {/* Stage II-IV */}
                       <div className="form-item">
-                        <label className="field-label" style={{ fontSize: "14.5px" }}>Stage II-IV</label>
-                        <input
-                          type="number"
+                        <label className="field-label">Stage II-IV (%)</label>
+                        <input disabled={readOnly || busy} aria-label="IOTA - Stage II-IV (%)" name="iota_stage2_4"
+                          type="number" min="0" max="100"
                           step="0.1"
                           className="form-input"
                           style={
                             isIotaSumInvalid
                               ? { borderColor: "#ef4444", backgroundColor: "#fff5f5" }
                               : isIotaSumValid
-                              ? { borderColor: "#22c55e", backgroundColor: "#f0fdf4" }
+                              ? { borderColor: "#10b981", backgroundColor: "#ecfdf5" }
                               : undefined
                           }
                           value={form.iota_stage2_4}
@@ -1746,16 +1266,16 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                       {/* Metastatic */}
                       <div className="form-item">
-                        <label className="field-label" style={{ fontSize: "14.5px" }}>Metastatic (%)</label>
-                        <input
-                          type="number"
+                        <label className="field-label">Metastatic (%)</label>
+                        <input disabled={readOnly || busy} aria-label="IOTA - Metastatic (%)" name="iota_metastatic"
+                          type="number" min="0" max="100"
                           step="0.1"
                           className="form-input"
                           style={
                             isIotaSumInvalid
                               ? { borderColor: "#ef4444", backgroundColor: "#fff5f5" }
                               : isIotaSumValid
-                              ? { borderColor: "#22c55e", backgroundColor: "#f0fdf4" }
+                              ? { borderColor: "#10b981", backgroundColor: "#ecfdf5" }
                               : undefined
                           }
                           value={form.iota_metastatic}
@@ -1765,100 +1285,21 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                     </div>
 
                     {isIotaSumInvalid && (
-                      <div
-                        style={{
-                          marginTop: "16px",
-                          padding: "12px 16px",
-                          borderRadius: "8px",
-                          background: "#fef2f2",
-                          border: "1.5px solid #ef4444",
-                          color: "#b91c1c",
-                          fontSize: "14.5px",
-                          fontWeight: 600,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexWrap: "wrap",
-                          gap: "10px",
-                        }}
-                      >
+                      <div className="iota-feedback is-invalid">
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <span style={{ fontSize: "18px" }}>⚠️</span>
-                          <span>
-                            Cảnh báo sai lệch: Tổng 6 mục hiện là <strong>{currentIotaSum}%</strong>. Yêu cầu tổng phải bằng đúng <strong>100%</strong> (Hiện đang {currentIotaSum > 100 ? "vượt quá" : "còn thiếu"}{" "}
-                            <strong>{Math.abs(parseFloat((100 - currentIotaSum).toFixed(1)))}%</strong>)!
-                          </span>
+                          <span>⚠️</span>
+                          <span>{iotaError}</span>
                         </div>
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          <button
-                            type="button"
-                            onClick={handleAutoBalanceIota}
-                            style={{
-                              padding: "6px 14px",
-                              background: "#b91c1c",
-                              color: "#ffffff",
-                              border: "none",
-                              borderRadius: "6px",
-                              fontSize: "13.5px",
-                              fontWeight: 600,
-                              cursor: "pointer",
-                            }}
-                          >
-                            🎯 Tự động cân đối 100%
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleResetIota}
-                            style={{
-                              padding: "6px 12px",
-                              background: "#ffffff",
-                              color: "#64748b",
-                              border: "1px solid #cbd5e1",
-                              borderRadius: "6px",
-                              fontSize: "13px",
-                              fontWeight: 500,
-                              cursor: "pointer",
-                            }}
-                          >
-                            ↺ Xóa làm lại
-                          </button>
-                        </div>
+                        <button type="button" onClick={handleResetIota} className="iota-reset-btn">
+                          ↺ Xóa làm lại
+                        </button>
                       </div>
                     )}
 
                     {isIotaSumValid && (
-                      <div
-                        style={{
-                          marginTop: "16px",
-                          padding: "10px 16px",
-                          borderRadius: "8px",
-                          background: "#f0fdf4",
-                          border: "1.5px solid #86efac",
-                          color: "#15803d",
-                          fontSize: "14px",
-                          fontWeight: 600,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          flexWrap: "wrap",
-                          gap: "10px",
-                        }}
-                      >
-                        <span> Tuyệt vời! Tổng 6 mục đã đạt chuẩn đúng 100%. Dữ liệu hoàn toàn hợp lệ để lưu phiếu.</span>
-                        <button
-                          type="button"
-                          onClick={handleResetIota}
-                          style={{
-                            padding: "4px 10px",
-                            background: "transparent",
-                            color: "#15803d",
-                            border: "1px solid #86efac",
-                            borderRadius: "6px",
-                            fontSize: "12.5px",
-                            fontWeight: 500,
-                            cursor: "pointer",
-                          }}
-                        >
+                      <div className="iota-feedback is-valid">
+                        <span>✓ Tổng cả 6 ô bằng 100%, đúng quy ước nhập của phiếu.</span>
+                        <button type="button" onClick={handleResetIota} className="iota-reset-btn">
                           ↺ Nhập lại
                         </button>
                       </div>
@@ -1875,22 +1316,25 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
         {/* ============================================================== */}
         <div
           ref={sectionRefs.sec5}
+          id="entry-sec5"
           className={`section-accordion ${openSections.sec5 ? "is-open" : ""}`}
         >
           <button
             type="button"
             className="section-header-btn"
+            aria-expanded={openSections.sec5}
             onClick={() => toggleSection("sec5")}
           >
             <div className="section-header-left">
               <span className="section-roman-badge">V</span>
               <div className="section-title-wrap">
-                <h3>ĐẶC ĐIỂM CỘNG HƯỞNG TỪ (MRI)</h3>
+                <h3>{compact ? "Cộng hưởng từ (MRI)" : "Cộng hưởng từ (MRI)"}</h3>
               </div>
             </div>
             <div className="section-header-right">
-              <span className={`section-count-badge ${countSec5 === 15 ? "is-complete" : ""}`}>
-                {countSec5}/15 câu
+              <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
+              <span className={`section-count-badge ${countSec5 === 16 ? "is-complete" : ""}`}>
+                {countSec5}/16 câu
               </span>
             </div>
           </button>
@@ -1898,58 +1342,50 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
           {openSections.sec5 && (
             <div className="section-body">
               <div className="form-grid-2">
-                {/* 39. Mô buồng trứng */}
+                {/* 39. Số lượng u */}
                 <div className="form-item">
-                  <label className="field-label">Mô buồng trứng</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_so_luong_u">Số lượng u</label>
+                  <select id="entry-mri_so_luong_u" disabled={readOnly || busy} aria-label="Số lượng u (MRI)" name="mri_so_luong_u"
+                    className="form-select"
+                    value={form.mri_so_luong_u}
+                    onChange={(e) => handleChange("mri_so_luong_u", e.target.value)}
+                  >
+                    {choiceOptions("mri_so_luong_u")}
+                  </select>
+                </div>
+
+                {/* 40. Mô buồng trứng */}
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-mri_mo_buong_trung">Mô buồng trứng</label>
+                  <select id="entry-mri_mo_buong_trung" disabled={readOnly || busy} aria-label="Mô buồng trứng (MRI)" name="mri_mo_buong_trung"
                     className="form-select"
                     value={form.mri_mo_buong_trung}
                     onChange={(e) => handleChange("mri_mo_buong_trung", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Còn">Còn</option>
                     <option value="Không quan sát thấy">Không quan sát thấy</option>
                     <option value="Không đánh giá">Không đánh giá</option>
                   </select>
                 </div>
 
-                {/* 40. Số lượng u */}
-                <div className="form-item">
-                  <label className="field-label">Số lượng u</label>
-                  <select
-                    className="form-select"
-                    value={form.mri_so_luong_u}
-                    onChange={(e) => handleChange("mri_so_luong_u", e.target.value)}
-                  >
-                    <option value="" disabled>-- Chọn --</option>
-                    <option value="1 bên">1 bên</option>
-                    <option value="2 bên">2 bên</option>
-                  </select>
-                </div>
-
                 {/* 41. Dạng tổn thương */}
                 <div className="form-item">
-                  <label className="field-label">Dạng tổn thương</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_dang_ton_thuong">Dạng tổn thương</label>
+                  <select id="entry-mri_dang_ton_thuong" disabled={readOnly || busy} aria-label="Dạng tổn thương (MRI)" name="mri_dang_ton_thuong"
                     className="form-select"
                     value={form.mri_dang_ton_thuong}
                     onChange={(e) => handleChange("mri_dang_ton_thuong", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
-                    <option value="Nang đơn thùy">Nang đơn thùy</option>
-                    <option value="Nang đa thùy">Nang đa thùy</option>
-                    <option value="Nang và đặc">Nang và đặc</option>
-                    <option value="chứa mỡ">chứa mỡ</option>
-                    <option value="Nang">Nang</option>
-                    <option value="U đặc">U đặc</option>
+                    {choiceOptions("mri_dang_ton_thuong")}
                   </select>
                 </div>
 
                 {/* 42. Kích thước u */}
                 <div className="form-item">
-                  <label className="field-label">Kích thước u</label>
-                  <input
-                    type="number"
+                  <label className="field-label" htmlFor="entry-mri_kich_thuoc_u">Kích thước u</label>
+                  <input id="entry-mri_kich_thuoc_u" disabled={readOnly || busy} aria-label="Kích thước u (MRI)" name="mri_kich_thuoc_u"
+                    type="number" min="0"
                     className="form-input"
                     value={form.mri_kich_thuoc_u}
                     onChange={(e) => handleChange("mri_kich_thuoc_u", e.target.value)}
@@ -1958,18 +1394,18 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 43. Dịch nang (T1W và T2W - 5 biến chuẩn) */}
                 <div className="form-item">
-                  <label className="field-label">Dịch nang (T1W)</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_dich_nang_t1w">Dịch nang (T1W)</label>
+                  <select id="entry-mri_dich_nang_t1w" disabled={readOnly || busy} aria-label="mri_dich_nang_t1w" name="mri_dich_nang_t1w"
                     className="form-select"
                     value={form.mri_dich_nang_t1w || ""}
                     onChange={(e) => {
                       const t1 = e.target.value;
                       handleChange("mri_dich_nang_t1w", t1);
-                      const t2 = form.mri_dich_nang_t2w || "cao";
+                      const t2 = form.mri_dich_nang_t2w || "";
                       handleChange("mri_dich_nang", `T1w: ${t1}, T2w: ${t2}`);
                     }}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="thấp">Thấp</option>
                     <option value="cao">Cao</option>
                     <option value="trung gian">Trung gian</option>
@@ -1979,18 +1415,18 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                 </div>
 
                 <div className="form-item">
-                  <label className="field-label">Dịch nang (T2W)</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_dich_nang_t2w">Dịch nang (T2W)</label>
+                  <select id="entry-mri_dich_nang_t2w" disabled={readOnly || busy} aria-label="mri_dich_nang_t2w" name="mri_dich_nang_t2w"
                     className="form-select"
                     value={form.mri_dich_nang_t2w || ""}
                     onChange={(e) => {
                       const t2 = e.target.value;
                       handleChange("mri_dich_nang_t2w", t2);
-                      const t1 = form.mri_dich_nang_t1w || "thấp";
+                      const t1 = form.mri_dich_nang_t1w || "";
                       handleChange("mri_dich_nang", `T1w: ${t1}, T2w: ${t2}`);
                     }}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="cao">Cao</option>
                     <option value="thấp">Thấp</option>
                     <option value="trung gian">Trung gian</option>
@@ -2001,13 +1437,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 44. Thành phần mỡ */}
                 <div className="form-item">
-                  <label className="field-label">Thành phần mỡ</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_thanh_phan_mo">Thành phần mỡ</label>
+                  <select id="entry-mri_thanh_phan_mo" disabled={readOnly || busy} aria-label="Thành phần mỡ" name="mri_thanh_phan_mo"
                     className="form-select"
                     value={form.mri_thanh_phan_mo}
                     onChange={(e) => handleChange("mri_thanh_phan_mo", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
@@ -2015,23 +1451,23 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 45. Phần đặc */}
                 <div className="form-item">
-                  <label className="field-label">Phần đặc</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_phan_dac">Phần đặc</label>
+                  <select id="entry-mri_phan_dac" disabled={readOnly || busy} aria-label="Phần đặc (MRI)" name="mri_phan_dac"
                     className="form-select"
                     value={form.mri_phan_dac}
                     onChange={(e) => handleChange("mri_phan_dac", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
                   {form.mri_phan_dac === "Có" && (
                     <div className="conditional-box">
-                      <label style={{ fontSize: "14px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "6px" }}>
+                      <label className="conditional-box-label">
                         Kích thước phần đặc
                       </label>
-                      <input
-                        type="number"
+                      <input disabled={readOnly || busy} aria-label="Kích thước phần đặc (MRI)" name="mri_kich_thuoc_phan_dac"
+                        type="number" min="0"
                         className="form-input"
                         value={form.mri_kich_thuoc_phan_dac}
                         onChange={(e) => handleChange("mri_kich_thuoc_phan_dac", e.target.value)}
@@ -2042,28 +1478,39 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 47. Khuếch tán */}
                 <div className="form-item">
-                  <label className="field-label">Khuếch tán</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_khuech_tan">Khuếch tán</label>
+                  <select id="entry-mri_khuech_tan" disabled={readOnly || busy} aria-label="Khuếch tán" name="mri_khuech_tan"
                     className="form-select"
                     value={form.mri_khuech_tan}
                     onChange={(e) => handleChange("mri_khuech_tan", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không giới hạn">Không giới hạn</option>
                     <option value="Giới hạn">Giới hạn</option>
                     <option value="Không đánh giá">Không đánh giá</option>
                   </select>
                 </div>
 
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-mri_tang_sinh_mach_mau">Tăng sinh mạch máu</label>
+                  <select id="entry-mri_tang_sinh_mach_mau" disabled={readOnly || busy} aria-label="Tăng sinh mạch máu (MRI)" name="mri_tang_sinh_mach_mau"
+                    className="form-select"
+                    value={form.mri_tang_sinh_mach_mau}
+                    onChange={(e) => handleChange("mri_tang_sinh_mach_mau", e.target.value)}
+                  >
+                    {choiceOptions("mri_tang_sinh_mach_mau")}
+                  </select>
+                </div>
+
                 {/* 48. Đặc điểm ngấm thuốc tương phản từ */}
                 <div className="form-item">
-                  <label className="field-label">Đặc điểm ngấm thuốc tương phản từ</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_ngam_thuoc">Đặc điểm ngấm thuốc tương phản từ</label>
+                  <select id="entry-mri_ngam_thuoc" disabled={readOnly || busy} aria-label="Đặc điểm ngấm thuốc tương phản từ" name="mri_ngam_thuoc"
                     className="form-select"
                     value={form.mri_ngam_thuoc}
                     onChange={(e) => handleChange("mri_ngam_thuoc", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="type 1">type 1</option>
                     <option value="type 2">type 2</option>
                     <option value="type 3">type 3</option>
@@ -2075,13 +1522,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 49. Hạch */}
                 <div className="form-item">
-                  <label className="field-label">Hạch</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_hach">Hạch</label>
+                  <select id="entry-mri_hach" disabled={readOnly || busy} aria-label="Hạch" name="mri_hach"
                     className="form-select"
                     value={form.mri_hach}
                     onChange={(e) => handleChange("mri_hach", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Có">Có</option>
                   </select>
@@ -2089,13 +1536,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 50. Dịch ổ bụng */}
                 <div className="form-item">
-                  <label className="field-label">Dịch ổ bụng</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-mri_dich_o_bung">Dịch ổ bụng</label>
+                  <select id="entry-mri_dich_o_bung" disabled={readOnly || busy} aria-label="Dịch ổ bụng (MRI)" name="mri_dich_o_bung"
                     className="form-select"
                     value={form.mri_dich_o_bung}
                     onChange={(e) => handleChange("mri_dich_o_bung", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="Không">Không</option>
                     <option value="Cùng đồ">Cùng đồ</option>
                     <option value="2 hố chậu">2 hố chậu</option>
@@ -2106,8 +1553,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 51. Tổn thương cơ quan khác */}
                 <div className="form-item">
-                  <label className="field-label">Tổn thương cơ quan khác</label>
-                  <input
+                  <label className="field-label" htmlFor="entry-mri_ton_thuong_co_quan_khac">Tổn thương cơ quan khác</label>
+                  <input id="entry-mri_ton_thuong_co_quan_khac" disabled={readOnly || busy} aria-label="Tổn thương cơ quan khác" name="mri_ton_thuong_co_quan_khac"
                     type="text"
                     className="form-input"
                     value={form.mri_ton_thuong_co_quan_khac}
@@ -2117,13 +1564,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* ORADS */}
                 <div className="form-item">
-                  <label className="field-label">ORADS</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-sa_orads">ORADS</label>
+                  <select id="entry-sa_orads" disabled={readOnly || busy} aria-label="ORADS (Siêu âm)" name="sa_orads"
                     className="form-select"
                     value={form.sa_orads}
                     onChange={(e) => handleChange("sa_orads", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="0">0</option>
                     <option value="1">1</option>
                     <option value="2">2</option>
@@ -2135,8 +1582,8 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 52. Kết luận MRI */}
                 <div className="form-item form-col-span-full">
-                  <label className="field-label">Kết luận MRI</label>
-                  <input
+                  <label className="field-label" htmlFor="entry-mri_ket_luan">Kết luận MRI</label>
+                  <input id="entry-mri_ket_luan" disabled={readOnly || busy} aria-label="Kết luận MRI" name="mri_ket_luan"
                     type="text"
                     className="form-input"
                     value={form.mri_ket_luan}
@@ -2154,22 +1601,25 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
         {/* ============================================================== */}
         <div
           ref={sectionRefs.sec6}
+          id="entry-sec6"
           className={`section-accordion ${openSections.sec6 ? "is-open" : ""}`}
         >
           <button
             type="button"
             className="section-header-btn"
+            aria-expanded={openSections.sec6}
             onClick={() => toggleSection("sec6")}
           >
             <div className="section-header-left">
               <span className="section-roman-badge">VI</span>
               <div className="section-title-wrap">
-                <h3>PROTOCOL PHẪU THUẬT</h3>
+                <h3>{compact ? "Phẫu thuật" : "Thông tin phẫu thuật"}</h3>
               </div>
             </div>
             <div className="section-header-right">
-              <span className={`section-count-badge ${countSec6 === 6 ? "is-complete" : ""}`}>
-                {countSec6}/6 mục
+              <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
+              <span className={`section-count-badge ${countSec6 === 7 ? "is-complete" : ""}`}>
+                {countSec6}/7 mục
               </span>
             </div>
           </button>
@@ -2179,13 +1629,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
               <div className="form-grid-2">
                 {/* 1. Chẩn đoán trước phẫu thuật */}
                 <div className="form-item">
-                  <label className="field-label">1. Chẩn đoán trước phẫu thuật</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-pt_chan_doan_truoc">1. Chẩn đoán trước phẫu thuật</label>
+                  <select id="entry-pt_chan_doan_truoc" disabled={readOnly || busy} aria-label="Chẩn đoán trước phẫu thuật" name="pt_chan_doan_truoc"
                     className="form-select"
                     value={form.pt_chan_doan_truoc}
                     onChange={(e) => handleChange("pt_chan_doan_truoc", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="u buồng trứng">u buồng trứng</option>
                     <option value="ung thư buồng trứng">ung thư buồng trứng</option>
                   </select>
@@ -2193,13 +1643,13 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 2. Chẩn đoán sau phẫu thuật */}
                 <div className="form-item">
-                  <label className="field-label">2. Chẩn đoán sau phẫu thuật</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-pt_chan_doan_sau">2. Chẩn đoán sau phẫu thuật</label>
+                  <select id="entry-pt_chan_doan_sau" disabled={readOnly || busy} aria-label="Chẩn đoán sau phẫu thuật" name="pt_chan_doan_sau"
                     className="form-select"
                     value={form.pt_chan_doan_sau}
                     onChange={(e) => handleChange("pt_chan_doan_sau", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
+                    <option value="">-- Chọn --</option>
                     <option value="u buồng trứng">u buồng trứng</option>
                     <option value="ung thư buồng trứng">ung thư buồng trứng</option>
                   </select>
@@ -2226,7 +1676,7 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                         <button
                           key={opt}
                           type="button"
-                          className={`toggle-chip ${isChecked ? "active" : ""}`}
+                          disabled={readOnly || busy} aria-pressed={isChecked} className={`toggle-chip ${isChecked ? "active" : ""}`}
                           onClick={() => {
                             const next = isChecked
                               ? selectedMethods.filter((m: string) => m !== opt)
@@ -2243,28 +1693,20 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
 
                 {/* 4. Sinh thiết lạnh */}
                 <div className="form-item">
-                  <label className="field-label">4. Sinh thiết lạnh</label>
-                  <select
+                  <label className="field-label" htmlFor="entry-pt_sinh_thiet_lanh">4. Sinh thiết lạnh</label>
+                  <select id="entry-pt_sinh_thiet_lanh" disabled={readOnly || busy} aria-label="Sinh thiết lạnh" name="pt_sinh_thiet_lanh"
                     className="form-select"
                     value={form.pt_sinh_thiet_lanh}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      handleChange("pt_sinh_thiet_lanh", val);
-                      if (val === "Không") {
-                        handleChange("pt_sinh_thiet_lanh_ghi_chu", "");
-                      }
-                    }}
+                    onChange={e => handleChange("pt_sinh_thiet_lanh", e.target.value)}
                   >
-                    <option value="" disabled>-- Chọn --</option>
-                    <option value="Không">Không</option>
-                    <option value="Có">Có</option>
+                    {choiceOptions("pt_sinh_thiet_lanh")}
                   </select>
-                  {form.pt_sinh_thiet_lanh === "Có" && (
+                  {(form.pt_sinh_thiet_lanh === "Có" || form.pt_sinh_thiet_lanh_ghi_chu) && (
                     <div className="conditional-box">
-                      <label style={{ fontSize: "14px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "6px" }}>
-                        Ghi chú kết quả sinh thiết lạnh
+                      <label className="conditional-box-label">
+                        Ghi chú kết quả sinh thiết lạnh đã lưu
                       </label>
-                      <input
+                      <input disabled={readOnly || busy} aria-label="pt_sinh_thiet_lanh_ghi_chu" name="pt_sinh_thiet_lanh_ghi_chu"
                         type="text"
                         className="form-input"
                         placeholder="Nhập kết quả sinh thiết lạnh..."
@@ -2276,27 +1718,10 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                   )}
                 </div>
 
-                {/* 5. Dịch ổ bụng khi phẫu thuật */}
-                <div className="form-item">
-                  <label className="field-label">5. Dịch ổ bụng khi phẫu thuật</label>
-                  <select
-                    className="form-select"
-                    value={form.pt_dich_o_bung || ""}
-                    onChange={(e) => handleChange("pt_dich_o_bung", e.target.value)}
-                  >
-                    <option value="" disabled>-- Chọn --</option>
-                    <option value="Không có">Không có</option>
-                    <option value="Lượng ít (< 100ml)">Lượng ít (&lt; 100ml)</option>
-                    <option value="Lượng vừa (100 - 500ml)">Lượng vừa (100 - 500ml)</option>
-                    <option value="Lượng nhiều (> 500ml)">Lượng nhiều (&gt; 500ml)</option>
-                    <option value="Không đánh giá">Không đánh giá</option>
-                  </select>
-                </div>
-
-                {/* 6. Mô tả tổn thương u khi phẫu thuật */}
+                {/* 5. Mô tả tổn thương u khi phẫu thuật */}
                 <div className="form-item form-col-span-full">
-                  <label className="field-label">6. Mô tả tổn thương u khi phẫu thuật</label>
-                  <input
+                  <label className="field-label" htmlFor="entry-pt_ton_thuong">5. Mô tả tổn thương u khi phẫu thuật</label>
+                  <input id="entry-pt_ton_thuong" disabled={readOnly || busy} aria-label="Mô tả tổn thương u khi phẫu thuật" name="pt_ton_thuong"
                     type="text"
                     className="form-input"
                     placeholder="Ví dụ: U buồng trứng P dạng nang đa thùy..."
@@ -2304,6 +1729,35 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
                     onChange={(e) => handleChange("pt_ton_thuong", e.target.value)}
                   />
                 </div>
+
+                {/* 6. UBT xoắn */}
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-ubt_xoan">UBT xoắn</label>
+                  <select id="entry-ubt_xoan" disabled={readOnly || busy} aria-label="UBT xoắn" name="ubt_xoan"
+                    className="form-select"
+                    value={form.ubt_xoan}
+                    onChange={(e) => handleChange("ubt_xoan", e.target.value)}
+                  >
+                    <option value="">-- Chọn --</option>
+                    <option value="Không">Không</option>
+                    <option value="Có">Có</option>
+                  </select>
+                </div>
+
+                {/* 7. UBT vỡ */}
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-ubt_vo">UBT vỡ</label>
+                  <select id="entry-ubt_vo" disabled={readOnly || busy} aria-label="UBT vỡ" name="ubt_vo"
+                    className="form-select"
+                    value={form.ubt_vo}
+                    onChange={(e) => handleChange("ubt_vo", e.target.value)}
+                  >
+                    <option value="">-- Chọn --</option>
+                    <option value="Không">Không</option>
+                    <option value="Có">Có</option>
+                  </select>
+                </div>
+
               </div>
             </div>
           )}
@@ -2314,247 +1768,44 @@ export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = () =>
         {/* ============================================================== */}
         <div
           ref={sectionRefs.sec7}
+          id="entry-sec7"
           className={`section-accordion ${openSections.sec7 ? "is-open" : ""}`}
         >
           <button
             type="button"
             className="section-header-btn"
+            aria-expanded={openSections.sec7}
             onClick={() => toggleSection("sec7")}
           >
             <div className="section-header-left">
               <span className="section-roman-badge">VII</span>
               <div className="section-title-wrap">
-                <h3>PHÂN LOẠI GIẢI PHẪU BỆNH CỦA U BUỒNG TRỨNG THEO WHO</h3>
+                <h3>{compact ? "Giải phẫu bệnh WHO" : "Phân loại giải phẫu bệnh theo WHO"}</h3>
               </div>
             </div>
             <div className="section-header-right">
+              <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
               <span className={`section-count-badge ${selectedPathologyId ? "is-complete" : ""}`}>
-                {selectedPathologyId ? "Đã chọn 1" : "0/1 câu"}
+                {`Đã chọn ${countSec7}/2`}
               </span>
             </div>
           </button>
 
           {openSections.sec7 && (
             <div className="section-body">
-              <div className="form-grid-2">
-                {/* 1. Trường chính: Dropdown chọn kết quả GPB WHO chuẩn */}
-                <div className="form-item form-col-span-full">
-                  <label className="field-label">
-                    <span>Kết quả Phân loại Giải phẫu bệnh theo WHO</span>
-                    <span className="field-hint">(Chọn 1 trong các lựa chọn)</span>
-                  </label>
-                  <select
-                    className="form-select"
-                    value={selectedPathologyId}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSelectedPathologyId(val);
-                      sessionStorage.setItem("clinical_form_draft_pathology", val);
-                    }}
-                  >
-                    <option value="" disabled>-- Vui lòng chọn kết quả giải phẫu bệnh theo WHO --</option>
-                    {WHO_PATHOLOGY_OPTIONS_V2.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Khi chọn Khác: Hiện conditional-box ghi rõ */}
-                  {selectedPathologyId === "pathology_other" && (
-                    <div className="conditional-box">
-                      <label style={{ fontSize: "14px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "6px" }}>
-                        Ghi rõ kết quả giải phẫu bệnh khác <span className="required-star">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Nhập tên giải phẫu bệnh khác..."
-                        value={pathologyOtherText}
-                        onChange={(e) => setPathologyOtherText(e.target.value)}
-                        autoFocus
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Thông tin bản chất u tự động & Mã ICD-O tương ứng */}
-                {selectedPathologyId && (
-                  <div className="form-item form-col-span-full">
-                    <div
-                      style={{
-                        padding: "16px 20px",
-                        background: "#f8fafc",
-                        border: "1.5px solid #e2e8f0",
-                        borderRadius: "10px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        flexWrap: "wrap",
-                        gap: "12px",
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                          Bản chất u (Tự động xác định theo WHO)
-                        </div>
-                        <div style={{ marginTop: "6px" }}>
-                          {(() => {
-                            const matched = WHO_PATHOLOGY_OPTIONS_V2.find((o) => o.id === selectedPathologyId);
-                            const cls = matched?.classification;
-                            if (!cls || cls === "unspecified") {
-                              return <span style={{ color: "#64748b", fontStyle: "italic", fontSize: "14.5px" }}>Chưa phân loại (tùy thuộc chẩn đoán khác)</span>;
-                            }
-                            return (
-                              <span
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  padding: "5px 14px",
-                                  borderRadius: "16px",
-                                  fontSize: "14px",
-                                  fontWeight: 700,
-                                  backgroundColor:
-                                    cls === "benign" ? "#dcfce7" :
-                                    cls === "borderline" ? "#fef3c7" : "#fee2e2",
-                                  color:
-                                    cls === "benign" ? "#166534" :
-                                    cls === "borderline" ? "#92400e" : "#991b1b",
-                                  border:
-                                    cls === "benign" ? "1px solid #86efac" :
-                                    cls === "borderline" ? "1px solid #fde68a" : "1px solid #fca5a5",
-                                }}
-                              >
-                                {cls === "benign" ? "🟢 Lành tính" :
-                                 cls === "borderline" ? "🟠 Giáp biên ác" : "🔴 Ác tính"}
-                              </span>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      {selectedPathologyId !== "pathology_other" && (
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: "13px", color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                            Mã ICD-O
-                          </div>
-                          <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--primary)", marginTop: "4px" }}>
-                            {WHO_PATHOLOGY_OPTIONS_V2.find((o) => o.id === selectedPathologyId)?.code || "--"}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Tùy chọn xem toàn bộ danh sách 20 lựa chọn (dạng danh sách radio chuẩn) */}
-                <div className="form-item form-col-span-full" style={{ marginTop: "6px" }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowPathologyRadioList((prev) => !prev)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--primary)",
-                      fontSize: "14.5px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      padding: "4px 0",
-                      alignSelf: "flex-start",
-                    }}
-                  >
-                    <span>{showPathologyRadioList ? "▲ Thu gọn danh sách lựa chọn" : "▼ Xem danh sách chi tiết tất cả 20 lựa chọn GPB theo WHO"}</span>
-                  </button>
-
-                  {showPathologyRadioList && (
-                    <div className="options-list" style={{ marginTop: "12px" }}>
-                      {WHO_PATHOLOGY_OPTIONS_V2.map((opt) => {
-                        const isSelected = selectedPathologyId === opt.id;
-                        return (
-                          <label
-                            key={opt.id}
-                            className={`option-row ${isSelected ? "is-selected" : ""}`}
-                            style={{
-                              padding: "10px 14px",
-                              border: isSelected ? "1.5px solid var(--primary)" : "1px solid #e2e8f0",
-                              borderRadius: "8px",
-                              marginBottom: "6px",
-                              background: isSelected ? "var(--primary-light)" : "#ffffff",
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "12px",
-                            }}
-                          >
-                            <input
-                              type="radio"
-                              name="who_pathology_radio_list"
-                              value={opt.id}
-                              checked={isSelected}
-                              onChange={() => {
-                                setSelectedPathologyId(opt.id);
-                                sessionStorage.setItem("clinical_form_draft_pathology", opt.id);
-                              }}
-                            />
-                            <span
-                              className="option-label"
-                              style={{
-                                fontSize: "15px",
-                                fontWeight: isSelected ? 600 : 400,
-                                color: isSelected ? "var(--primary)" : "var(--text-primary)",
-                              }}
-                            >
-                              {opt.label}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <WhoResultsFields options={pathologyOptions} disabled={readOnly || busy}
+                values={[{id:selectedPathologyId,other:pathologyOtherText},{id:secondPathologyId,other:secondPathologyOtherText}]}
+                onChange={(slot,value) => { if(slot === 1){setSelectedPathologyId(value.id);setPathologyOtherText(value.other);}else{setSecondPathologyId(value.id);setSecondPathologyOtherText(value.other);} }}/>
             </div>
           )}
         </div>
 
-        {/* FOOTER ACTIONS BAR: CHỈ GIỮ NÚT GỬI PHIẾU KHẢO SÁT */}
-        {/* ============================================================== */}
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1.5px solid #cbd5e1",
-            borderRadius: "12px",
-            padding: "20px 24px",
-            marginTop: "26px",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            boxShadow: "0 2px 6px rgba(0, 0, 0, 0.04)",
-          }}
-        >
-          <button
-            type="submit"
-            className="btn-submit"
-            disabled={isSubmitting}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "10px",
-              minWidth: "220px",
-              padding: "12px 32px",
-              fontSize: "16px",
-              fontWeight: 600,
-            }}
-          >
-            <Send size={19} />
-            {isSubmitting ? "Đang gửi dữ liệu..." : "Gửi Phiếu Khảo Sát"}
-          </button>
-        </div>
+        {!compact && <div className="entry-submit-bar">
+          {formError && <p className="entry-submit-error" role="alert">{formError}</p>}
+          <div className="entry-submit-copy"><strong>Kiểm tra thông tin trước khi gửi</strong><span><Save size={14} aria-hidden="true"/>{saveStatus || "Nội dung được tự động lưu nháp."}</span></div>
+          <button type="submit" className="btn-submit" disabled={busy || readOnly}><Send size={18} aria-hidden="true"/>{busy ? "Đang gửi phiếu…" : submitLabel}</button>
+        </div>}
+        </fieldset>
       </form>
     </div>
   );
