@@ -1,39 +1,18 @@
-# Hướng dẫn Cập nhật Hệ thống An toàn (Update Guide)
+# Cập nhật hệ thống trên nhánh main
 
-Tài liệu hướng dẫn quy trình cập nhật mã nguồn và phiên bản mới cho hệ thống khảo sát y khoa.
+## PostgreSQL và Docker Compose
 
----
+Xem [cấu hình bàn giao](DEPLOYMENT_FOR_TEACHER.md) và bổ sung cấu hình `.env` trước khi cập nhật. Giữ volume đang phục vụ dữ liệu.
 
-## 1. NGUYÊN TẮC CẬP NHẬT
-- **Không bao giờ xóa Volume dữ liệu**: Tuyệt đối không sử dụng lệnh `docker compose down -v`.
-- **Luôn sao lưu trước khi cập nhật**: Tạo một bản sao lưu cơ sở dữ liệu trước mỗi lần triển khai bản vá.
-- **Không làm gián đoạn người dùng dài**: Tiến trình cập nhật được tối ưu diễn ra trong vòng dưới 30 giây.
-
----
-
-## 2. QUY TRÌNH CẬP NHẬT TỰ ĐỘNG
-
-Chạy lệnh cập nhật kèm tùy chọn tự động sao lưu:
 ```bash
-./scripts/update.sh --backup
+git rev-parse HEAD
+bash scripts/update.sh
 ```
 
-Script sẽ tự động:
-1. Tạo một tệp sao lưu `.dump` tại `/opt/ovarian-survey/backups/`.
-2. Kéo mã nguồn mới nhất bằng `git pull` (nếu có kho git).
-3. Xây dựng lại các image container có thay đổi.
-4. Chạy lệnh `alembic upgrade head` để cập nhật cấu trúc bảng dữ liệu (nếu có).
-5. Khởi động lại các container mà không làm mất dữ liệu.
+Luồng cập nhật sao lưu bằng `pg_dump`, kéo `origin/main` theo fast-forward, build Docker images, dừng backend/Nginx trong lúc migration, rồi chạy lại và kiểm tra health. Nếu bước nào lỗi, script trả mã lỗi. Giữ bản sao PostgreSQL và commit cũ đến khi kiểm tra phiếu cũ, đăng nhập và export thành công. Nếu script hiện có là bản cũ, đi theo trình tự nâng cấp lần đầu trong [tài liệu bàn giao](DEPLOYMENT_FOR_TEACHER.md).
 
----
+Cập nhật Web App cùng bản backend nếu dùng Google Sheets. Xem [hướng dẫn cài Apps Script và token](GOOGLE_SHEETS_GUIDE.md).
 
-## 3. CẬP NHẬT BIỂU MẪU KHẢO SÁT (FORM VERSIONING)
+## Phiên bản biểu mẫu
 
-Nếu nhóm chuyên môn y khoa muốn cập nhật danh mục phân loại giải phẫu bệnh hoặc bổ sung các lựa chọn mới:
-
-1. Tạo một tệp định nghĩa phiên bản mới: `form-definitions/ovarian-pathology-v2.json` với `"version": 2`.
-2. Nạp phiên bản mới vào hệ thống:
-   ```bash
-   docker compose exec backend python -m app.commands.import_form form-definitions/ovarian-pathology-v2.json
-   ```
-3. Hệ thống sẽ tự động chuyển sang phục vụ phiên bản mới nhất cho người dùng mới mà **hoàn toàn không làm ảnh hưởng** đến các submission cũ của phiên bản v1.
+Tài khoản có vai trò admin mở `/admin/form-builder` để lưu nháp, xem trước và xuất bản cấu hình mới. Phiếu cũ và bản nháp đã tạo tiếp tục tham chiếu phiên bản biểu mẫu của chúng. Xem [hướng dẫn quản lý biểu mẫu](FORM_MANAGEMENT_GUIDE.md).
