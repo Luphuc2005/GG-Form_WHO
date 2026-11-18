@@ -28,6 +28,8 @@ wheels/
 *.egg
 .pytest_cache/
 .pytest-tmp/
+.pytest-workflow-tmp/
+.workflow-qa/
 .coverage
 htmlcov/
 
