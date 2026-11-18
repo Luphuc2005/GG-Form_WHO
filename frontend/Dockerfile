@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy package definition
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 # Copy source code and build production static files
 COPY . .
