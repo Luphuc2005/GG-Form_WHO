@@ -144,6 +144,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [page, setPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [isRealtime, setIsRealtime] = useState(true);
 
   // Custom modal state for delete confirmation
@@ -190,7 +191,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleResyncGoogleSheets = async () => {
     if (
       !window.confirm(
-        "Đối chiếu mã phiếu và bổ sung các phiếu còn thiếu lên Google Sheet?\nCác dòng hiện có sẽ được giữ lại."
+        "Yêu cầu cập nhật các phiếu đã gửi lên Google Sheet?\nTiến độ và lỗi đồng bộ được theo dõi riêng cho từng phiếu."
       )
     ) {
       return;
@@ -198,7 +199,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setIsResyncing(true);
     try {
       const res = await resyncGoogleSheets(token);
-      alert(`Đã đối chiếu ${res.count} phiếu trên Google Sheet. Bổ sung ${res.added_count ?? 0} phiếu còn thiếu.`);
+      alert(res.warning || (res.count ? `Đã xếp ${res.count} phiếu vào hàng đợi đồng bộ. Xem trạng thái từng phiếu tại trang quản lý; đây chưa phải xác nhận dữ liệu đã có trên Sheet.` : "Không có phiếu nào trong hệ thống cần gửi lên Sheet."));
     } catch (err: any) {
       alert(err.message || "Lỗi khi đồng bộ Google Sheet.");
     } finally {
@@ -211,14 +212,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     try {
       const [statsData, subsData] = await Promise.all([
         fetchAdminStats(token),
-        fetchAdminSubmissions(page, 50, token, {
-
-        }),
+        fetchAdminSubmissions(page, 50, token, { q: searchTerm }),
       ]);
+      setLoadError("");
       setStats(statsData);
       setSubmissionsPage(subsData);
     } catch (err: any) {
-      console.error(err);
+      setLoadError(err.message || "Không tải được danh sách. Vui lòng thử lại.");
     } finally {
       if (showLoadingSpinner) setLoading(false);
     }
@@ -226,7 +226,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   useEffect(() => {
     loadData(true);
-  }, [page]);
+  }, [page, searchTerm]);
 
   // Real-time polling effect every 3 seconds
   useEffect(() => {
@@ -237,7 +237,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isRealtime, page, token]);
+  }, [isRealtime, page, token, searchTerm]);
 
   const handleLogoutClick = async () => {
     await adminLogout();
@@ -249,7 +249,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      await deleteAdminSubmission(deletingItem.id, token);
+      const reason = window.prompt("Ghi lý do hủy phiếu (ít nhất 3 ký tự). Dữ liệu và lịch sử vẫn được giữ lại:");
+      if (!reason || reason.trim().length < 3) { setDeleteError("Cần ghi lý do hủy ít nhất 3 ký tự."); return; }
+      await deleteAdminSubmission(deletingItem.id, token, reason.trim());
       setDeletingItem(null);
       await loadData(false);
     } catch (err: any) {
@@ -381,7 +383,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         backgroundColor: "#f1f5f9",
         borderRadius: "8px",
         marginBottom: "12px",
-        borderLeft: "4px solid #673ab7",
+        borderLeft: "4px solid #0f766e",
       }}
     >
       <span
@@ -389,7 +391,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           width: "24px",
           height: "24px",
           borderRadius: "6px",
-          backgroundColor: "#673ab7",
+          backgroundColor: "#0f766e",
           color: "#ffffff",
           display: "flex",
           alignItems: "center",
@@ -418,13 +420,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
     return (
       <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", color: "#1e293b" }}>
+      {loadError && <p className="workflow-error" role="alert">{loadError}</p>}
         {/* Top Sticky Bar */}
         <div
           style={{
             position: "sticky",
             top: 0,
             zIndex: 9999,
-            backgroundColor: "#5e35b1",
+            backgroundColor: "#115e59",
             color: "#ffffff",
             padding: "12px 24px",
             display: "flex",
@@ -488,7 +491,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               onClick={() => setPreviewData(null)}
               style={{
                 backgroundColor: "#ffffff",
-                color: "#5e35b1",
+                color: "#115e59",
                 border: "none",
                 borderRadius: "8px",
                 padding: "8px 18px",
@@ -531,7 +534,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   width: "56px",
                   height: "56px",
                   borderRadius: "14px",
-                  background: "linear-gradient(135deg, #673ab7 0%, #4527a0 100%)",
+                  background: "linear-gradient(135deg, #0f766e 0%, #115e59 100%)",
                   color: "#ffffff",
                   display: "flex",
                   alignItems: "center",
@@ -623,8 +626,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               )}
               {renderField("Lạc nội mạc tử cung", c.tien_can_lac_nmtc)}
               {renderField("Tình trạng có thai", c.co_thai)}
-              {renderField("UBT xoắn", c.ubt_xoan)}
-              {renderField("UBT vỡ", c.ubt_vo)}
               {renderField("UBT nhiễm trùng", c.ubt_nhiem_trung)}
             </div>
           </div>
@@ -698,8 +699,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 padding: "16px",
               }}
             >
-              <div style={{ fontSize: "14px", fontWeight: "700", color: "#673ab7", marginBottom: "12px" }}>
-                🎯 MÔ HÌNH DỰ ĐOÁN IOTA ADNEX (6 MỤC THÀNH PHẦN)
+              <div style={{ fontSize: "14px", fontWeight: "700", color: "#0f766e", marginBottom: "12px" }}>
+                IOTA ADNEX — TỶ LỆ NHẬP THEO QUY ƯỚC PHIẾU NGHIÊN CỨU
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
                 {renderField("Benign tumor", c.iota_benign, "%")}
@@ -731,8 +732,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 marginBottom: "14px",
               }}
             >
-              {renderField("Mô buồng trứng", c.mri_mo_buong_trung)}
               {renderField("Số lượng u", c.mri_so_luong_u)}
+              {renderField("Mô buồng trứng", c.mri_mo_buong_trung)}
               {renderField("Dạng tổn thương", c.mri_dang_ton_thuong)}
               {renderField("Kích thước u", c.mri_kich_thuoc_u, "mm")}
               {renderField(
@@ -743,6 +744,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               {renderField("Phần đặc", c.mri_phan_dac)}
               {renderField("Kích thước phần đặc", c.mri_kich_thuoc_phan_dac, "mm")}
               {renderField("Khuếch tán", c.mri_khuech_tan)}
+              {renderField("Tăng sinh mạch máu (MRI)", c.mri_tang_sinh_mach_mau)}
               {renderField("Ngấm thuốc tương phản từ", c.mri_ngam_thuoc)}
               {renderField("Hạch", c.mri_hach)}
               {renderField("Dịch ổ bụng", c.mri_dich_o_bung)}
@@ -776,6 +778,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               {renderField("Phương pháp phẫu thuật", c.pt_phuong_phap)}
               {renderField("Sinh thiết lạnh", c.pt_sinh_thiet_lanh === "Có" && c.pt_sinh_thiet_lanh_ghi_chu ? `Có (${c.pt_sinh_thiet_lanh_ghi_chu})` : c.pt_sinh_thiet_lanh)}
               {renderField("Mô tả tổn thương phẫu thuật", c.pt_ton_thuong || c.pt_mo_ta)}
+              {renderField("UBT xoắn", c.ubt_xoan)}
+              {renderField("UBT vỡ", c.ubt_vo)}
               {renderField("Dịch ổ bụng khi phẫu thuật", c.pt_dich_o_bung)}
             </div>
 
@@ -800,11 +804,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   paddingBottom: "12px",
                 }}
               >
-                <div style={{ fontSize: "15px", fontWeight: "700", color: "#673ab7", display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ fontSize: "15px", fontWeight: "700", color: "#0f766e", display: "flex", alignItems: "center", gap: "8px" }}>
                   <span>🔬 KẾT QUẢ PHÂN LOẠI GIẢI PHẪU BỆNH (WHO)</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "13px", color: "#64748b", fontWeight: "600" }}>Bản chất u:</span>
+                  <span style={{ fontSize: "13px", color: "#64748b", fontWeight: "600" }}>Bản chất u WHO 1:</span>
                   {getClassificationBadge(effectiveClassification)}
                 </div>
               </div>
@@ -833,7 +837,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         }}
                       >
                         <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "22px", height: "22px", borderRadius: "50%", background: "#ede9fe", color: "#7c3aed", fontSize: "13px" }}>✓</span>
-                        <span>{diag}</span>
+                        <span>WHO {idx + 1}: {diag}</span>
                       </div>
                     ))}
                   </div>
@@ -853,7 +857,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     style={{
                       background: "transparent",
                       border: "none",
-                      color: "#673ab7",
+                      color: "#0f766e",
                       fontSize: "13px",
                       fontWeight: "600",
                       cursor: "pointer",
@@ -903,7 +907,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 fontSize: "16px",
                 fontWeight: "700",
                 borderRadius: "8px",
-                backgroundColor: "#5e35b1",
+                backgroundColor: "#115e59",
                 color: "#ffffff",
                 border: "none",
                 boxShadow: "0 4px 12px rgba(94, 53, 177, 0.3)",
@@ -927,19 +931,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const borderlinePct = totalClass > 0 ? ((stats?.by_classification["borderline"] || 0) / totalClass) * 100 : 0;
   const malignantPct = totalClass > 0 ? ((stats?.by_classification["malignant"] || 0) / totalClass) * 100 : 0;
 
-  // Filter items by search term
-  const filteredSubmissions = (submissionsPage?.items || []).filter((sub) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    const ref = (sub.reference_code || "").toLowerCase();
-    const hs = (sub.so_hs || "").toLowerCase();
-    const name = (sub.ho_ten || "").toLowerCase();
-    const uuid = (sub.submission_uuid || "").toLowerCase();
-    return ref.includes(term) || hs.includes(term) || name.includes(term) || uuid.includes(term);
-  });
+  const filteredSubmissions = submissionsPage?.items || [];
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", color: "#1e293b" }}>
+      {loadError && <p className="workflow-error" role="alert">{loadError}</p>}
       {/* 1. Global Navigation Top Header */}
       <header
         style={{
@@ -969,7 +965,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 width: "42px",
                 height: "42px",
                 borderRadius: "10px",
-                background: "linear-gradient(135deg, #673ab7 0%, #4527a0 100%)",
+                background: "linear-gradient(135deg, #0f766e 0%, #115e59 100%)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1034,7 +1030,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   height: "34px",
                   borderRadius: "50%",
                   backgroundColor: "#ede9fe",
-                  color: "#673ab7",
+                  color: "#0f766e",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1109,8 +1105,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             {/* Open Google Sheet Button */}
-            <a
-              href="https://docs.google.com/spreadsheets/d/1GQRr6Ogq5-mX8WR0RB22k-BlychLrNSXrK4wKPcDxgY/edit?gid=0#gid=0"
+            {stats?.google_sheet_url && <a
+              href={stats.google_sheet_url}
               target="_blank"
               rel="noreferrer"
               style={{
@@ -1132,7 +1128,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             >
               <FileText size={18} />
               <span>Mở Google Sheet ↗</span>
-            </a>
+            </a>}
 
             {/* Resync Button */}
             <button
@@ -1169,7 +1165,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
-                backgroundColor: "#673ab7",
+                backgroundColor: "#0f766e",
                 color: "#ffffff",
                 padding: "9px 18px",
                 borderRadius: "8px",
@@ -1179,8 +1175,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 boxShadow: "0 2px 6px rgba(103, 58, 183, 0.25)",
                 transition: "all 0.15s ease",
               }}
-              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#5e35b1")}
-              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#673ab7")}
+              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#115e59")}
+              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#0f766e")}
             >
               <Download size={18} />
               <span>Xuất CSV / Excel</span>
@@ -1216,7 +1212,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   <div style={{ fontSize: "13px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                     Tổng số phiếu thu thập
                   </div>
-                  <div style={{ fontSize: "36px", fontWeight: "800", color: "#673ab7", marginTop: "4px" }}>
+                  <div style={{ fontSize: "36px", fontWeight: "800", color: "#0f766e", marginTop: "4px" }}>
                     {stats.total_submissions.toLocaleString("vi-VN")}
                   </div>
                 </div>
@@ -1229,7 +1225,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "#673ab7",
+                    color: "#0f766e",
                   }}
                 >
                   <Users size={24} />
@@ -1371,7 +1367,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   style={{
                     fontSize: "13px",
                     fontWeight: "600",
-                    color: "#673ab7",
+                    color: "#0f766e",
                     backgroundColor: "#f3e8ff",
                     padding: "3px 10px",
                     borderRadius: "14px",
@@ -1400,7 +1396,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   type="text"
                   placeholder="Tìm Số HS, Họ tên, Mã phiếu..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
                   style={{
                     border: "none",
                     outline: "none",
@@ -1464,7 +1460,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 {loading ? (
                   <tr>
                     <td colSpan={6} style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
-                      <RefreshCw className="animate-spin" size={24} style={{ margin: "0 auto 8px", color: "#673ab7" }} />
+                      <RefreshCw className="animate-spin" size={24} style={{ margin: "0 auto 8px", color: "#0f766e" }} />
                       <div>Đang tải dữ liệu khảo sát...</div>
                     </td>
                   </tr>
@@ -1558,7 +1554,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             title="Xem lại toàn bộ hồ sơ bệnh án & GPB"
                             disabled={previewLoading}
                             style={{
-                              backgroundColor: "#673ab7",
+                              backgroundColor: "#0f766e",
                               border: "none",
                               color: "#ffffff",
                               cursor: previewLoading ? "not-allowed" : "pointer",
@@ -1572,8 +1568,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               boxShadow: "0 2px 4px rgba(103, 58, 183, 0.2)",
                               transition: "all 0.15s ease",
                             }}
-                            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#5e35b1")}
-                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#673ab7")}
+                            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#115e59")}
+                            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#0f766e")}
                           >
                             <Eye size={15} />
                             <span>Xem chi tiết</span>
@@ -1586,7 +1582,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               setDeleteError(null);
                               setDeletingItem({ id: sub.id, refCode: sub.reference_code });
                             }}
-                            title="Xóa phiếu này khỏi hệ thống & Google Sheet"
+                            title="Hủy phiếu và giữ lịch sử"
                             style={{
                               backgroundColor: "#fef2f2",
                               border: "1px solid #fecaca",
@@ -1748,7 +1744,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   ?
                 </p>
                 <p style={{ margin: "8px 0 0 0", fontSize: "13px", color: "#64748b" }}>
-                  Hành động này sẽ xóa dữ liệu khỏi máy chủ đồng thời tự động cập nhật xóa dòng tương ứng trên Google Sheet.
+                  Phiếu sẽ được hủy, giữ lại dữ liệu và lịch sử. Tác vụ gỡ khỏi Google Sheet được theo dõi và thử lại nếu lỗi.
                 </p>
               </div>
             </div>

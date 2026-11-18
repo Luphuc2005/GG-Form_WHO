@@ -66,7 +66,7 @@ export async function fetchAdminSubmissions(
   page: number = 1,
   pageSize: number = 20,
   token?: string,
-  filters?: { form_version?: number; classification?: string }
+  filters?: { form_version?: number; classification?: string; q?: string }
 ): Promise<AdminSubmissionsPage> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -77,6 +77,7 @@ export async function fetchAdminSubmissions(
   });
   if (filters?.form_version) query.set("form_version", filters.form_version.toString());
   if (filters?.classification) query.set("classification", filters.classification);
+  if (filters?.q) query.set("q", filters.q);
 
   const res = await fetch(`${API_BASE}/admin/submissions?${query.toString()}`, { headers });
   if (!res.ok) {
@@ -89,11 +90,11 @@ export function getExportCsvUrl(): string {
   return `${API_BASE}/admin/export.csv`;
 }
 
-export async function deleteAdminSubmission(subId: number, token?: string): Promise<void> {
+export async function deleteAdminSubmission(subId: number, token?: string, reason: string = ""): Promise<void> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}/admin/submissions/${subId}`, {
+  const res = await fetch(`${API_BASE}/admin/submissions/${subId}?reason=${encodeURIComponent(reason)}`, {
     method: "DELETE",
     headers,
   });
@@ -155,7 +156,7 @@ export async function publishAdminForm(
   return data;
 }
 
-export async function resyncGoogleSheets(token?: string): Promise<{ status: string; count: number; added_count?: number; verified: true }> {
+export async function resyncGoogleSheets(token?: string): Promise<{ status: "queued"; count: number; warning?: string; sheet_extra_count?: number | null }> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -165,7 +166,7 @@ export async function resyncGoogleSheets(token?: string): Promise<{ status: stri
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.status !== "success" || data?.verified !== true || !Number.isInteger(data?.count)) {
+  if (!res.ok || data?.status !== "queued" || !Number.isInteger(data?.count)) {
     throw new Error(data?.error?.message || data?.message || data?.detail || "Chưa xác minh được số phiếu thực tế trên Google Sheet.");
   }
   return data;
