@@ -11,7 +11,8 @@ from app.schemas.form import FormOptionSchema, FormSchemaDefinition
 
 FORM_COLUMNS: List[Tuple[str, str]] = [
     # Thông tin định danh phiếu
-    ("submission_uuid", "Mã phiếu"),
+    ("submission_uuid", "ID đồng bộ"),
+    ("study_code", "Mã phiếu"),
     ("created_at", "Thời gian gửi"),
 
     # I. Hành chính
@@ -76,6 +77,7 @@ FORM_COLUMNS: List[Tuple[str, str]] = [
     ("mri_phan_dac", "Phần đặc (MRI)"),
     ("mri_kich_thuoc_phan_dac", "Kích thước phần đặc (MRI)"),
     ("mri_khuech_tan", "Khuếch tán"),
+    ("mri_tang_sinh_mach_mau", "Tăng sinh mạch máu (MRI)"),
     ("mri_ngam_thuoc", "Đặc điểm ngấm thuốc tương phản từ"),
     ("mri_hach", "Hạch"),
     ("mri_dich_o_bung", "Dịch ổ bụng (MRI)"),
@@ -90,8 +92,9 @@ FORM_COLUMNS: List[Tuple[str, str]] = [
     ("pt_ton_thuong", "Mô tả tổn thương u khi phẫu thuật"),
     ("pt_dich_o_bung", "Dịch ổ bụng khi phẫu thuật"),
 
-    # VII. Phân loại GPB WHO (Gộp lại thành 1 cột duy nhất theo yêu cầu)
-    ("who_diagnosis", "Phân loại Giải phẫu bệnh theo WHO"),
+    # VII. Hai kết quả WHO được xuất riêng theo vị trí, giữ kết quả cũ ở WHO 1.
+    ("who_diagnosis_1", "Kết quả giải phẫu bệnh WHO 1"),
+    ("who_diagnosis_2", "Kết quả giải phẫu bệnh WHO 2"),
 ]
 
 CLASSIFICATION_LABELS = {
@@ -100,6 +103,13 @@ CLASSIFICATION_LABELS = {
     "malignant": "Ác tính",
     "unspecified": "Chưa phân loại",
 }
+
+# Append study identifiers so existing clinical columns keep their positions.
+FORM_COLUMNS += [
+    ("hospital_code", "Mã bệnh viện"), ("encounter_code", "Mã đợt điều trị"),
+    ("study_phase", "Giai đoạn nghiên cứu"),
+    ("hospital_cancer_center", "Bệnh viện trung tâm ung thư (1/0)"),
+]
 
 AUTO_CLASSIFICATION_MAP = {
     # Lành tính (/0)
@@ -147,7 +157,9 @@ def infer_classification(pathology_data: dict, current_classification: Optional[
     if current_classification and current_classification not in ("unspecified", ""):
         return current_classification
     selected = pathology_data.get("selected", []) if isinstance(pathology_data, dict) else []
-    for node in selected:
+    from app.services.pathology_results import results_by_slot
+    primary = results_by_slot(selected).get(1)
+    for node in ([primary] if primary else []):
         nid = node.get("id", "")
         if nid in AUTO_CLASSIFICATION_MAP:
             return AUTO_CLASSIFICATION_MAP[nid]
@@ -161,9 +173,59 @@ def infer_classification(pathology_data: dict, current_classification: Optional[
 
 
 class ExportService:
+    @classmethod
+    def xlsx_file(cls, db: Session):
+        from tempfile import SpooledTemporaryFile
+        from openpyxl import Workbook
+        from openpyxl.cell import WriteOnlyCell
+        output = SpooledTemporaryFile(max_size=8 * 1024 * 1024)
+        workbook = Workbook(write_only=True)
+        sheet = workbook.create_sheet("Phiếu nghiên cứu")
+        sheet.freeze_panes = "A2"
+        columns = cls.get_columns_for_database(db, include_internal=False)
+        sheet.append([label for _, label, _ in columns])
+        for sub in SubmissionRepository.stream_all(db):
+            schema = FormSchemaDefinition.model_validate(sub.form_version.schema_json)
+            labels, codes = cls._build_maps(schema)
+            values = cls._flatten_submission_to_row(sub, columns, labels, codes)
+            cells = []
+            for (key, _, _), value in zip(columns, values):
+                if key in ("so_hs", "para") and isinstance(value, str) and value.startswith("'"):
+                    value = value[1:]
+                cell = WriteOnlyCell(sheet, value=value)
+                if isinstance(value, str):
+                    cell.data_type = "s"  # Literal text, including leading zeros and formula-like names.
+                cells.append(cell)
+            sheet.append(cells)
+        workbook.save(output)
+        output.seek(0)
+        return output
+
     @staticmethod
-    def get_columns_from_schema(_: FormSchemaDefinition) -> List[Tuple[str, str, str]]:
-        return [(key, label, label) for key, label in FORM_COLUMNS]
+    def get_columns_from_schema(schema: FormSchemaDefinition) -> List[Tuple[str, str, str]]:
+        columns = dict(FORM_COLUMNS)
+        for field in schema.clinical_fields or []:
+            if field.export:
+                columns[field.id] = field.label
+            else:
+                columns.pop(field.id, None)
+        return [(key, label, label) for key, label in columns.items()]
+
+    @staticmethod
+    def get_columns_for_database(db, include_internal=True):
+        from app.services.form_configuration import export_definitions
+        definitions, _ = export_definitions(db)
+        return [(d["key"], d["label"], d["label"]) for d in definitions if d["export"] and (include_internal or d["key"] != "submission_uuid")]
+
+    @staticmethod
+    def numeric_labels(db):
+        from app.services.clinical_validation import NUMBERS
+        from app.services.form_configuration import all_versions
+        keys = set(NUMBERS)
+        for version in all_versions(db):
+            schema = FormSchemaDefinition.model_validate(version.schema_json)
+            keys.update(f.id for f in schema.clinical_fields or [] if f.type == "number")
+        return {label for key, label, _ in ExportService.get_columns_for_database(db) if key in keys}
 
     @classmethod
     def stream_csv(
@@ -186,7 +248,7 @@ class ExportService:
             return
 
         schema_def = FormSchemaDefinition.model_validate(form_ver.schema_json)
-        columns = cls.get_columns_from_schema(schema_def)
+        columns = cls.get_columns_for_database(db, include_internal=False)
 
         # Write header row
         output = io.StringIO()
@@ -197,7 +259,10 @@ class ExportService:
         label_map, code_map = cls._build_maps(schema_def)
 
         for sub in SubmissionRepository.stream_all(db, form_version=form_version_num, batch_size=1000):
-            row_data = cls._flatten_submission_to_row(sub, columns, label_map, code_map)
+            # Old records must be interpreted using THEIR published catalog.
+            pinned = FormSchemaDefinition.model_validate(sub.form_version.schema_json)
+            pinned_labels, pinned_codes = cls._build_maps(pinned)
+            row_data = cls._flatten_submission_to_row(sub, columns, pinned_labels, pinned_codes)
             output = io.StringIO()
             writer = csv.writer(output)
             writer.writerow(row_data)
@@ -240,8 +305,10 @@ class ExportService:
 
         diagnosis_labels: List[str] = []
         diagnosis_codes: List[str] = []
+        from app.services.pathology_results import results_by_slot
+        diagnosis_slots = {}
 
-        for node in selected_nodes:
+        for slot, node in results_by_slot(selected_nodes).items():
             node_id = node.get("id")
             if not node_id:
                 continue
@@ -254,17 +321,20 @@ class ExportService:
                 if m:
                     code = m.group(1)
 
-            if node.get("other_text"):
-                lbl += f" ({node['other_text']})"
-                code = node["other_text"]
+            other_text = node.get("other_text") or (top_other_text if slot == 1 else "")
+            if other_text:
+                lbl += f" ({other_text})"
+                code = other_text
 
             diagnosis_labels.append(lbl)
+            diagnosis_slots[slot] = lbl
             if code:
                 diagnosis_codes.append(code)
 
         if not diagnosis_labels and top_other_text:
             diagnosis_labels.append(top_other_text)
             diagnosis_codes.append("Khác")
+            diagnosis_slots[1] = top_other_text
 
         created_vn = ""
         if submission.created_at:
@@ -283,6 +353,18 @@ class ExportService:
             col_key = col_info[0]
             if col_key == "submission_uuid":
                 row.append(str(submission.submission_uuid))
+            elif col_key == "study_code":
+                row.append(submission.study_code or "")
+            elif col_key == "workflow_status":
+                row.append(submission.workflow_status)
+            elif col_key in ("owner_name", "reviewer_name"):
+                account = submission.owner if col_key == "owner_name" else submission.reviewer
+                row.append(account.username if account else "")
+            elif col_key == "approved_at":
+                row.append((submission.approved_at + timedelta(hours=7)).strftime("%H:%M:%S %d/%m/%Y") if submission.approved_at else "")
+            elif col_key == "missing_reasons":
+                import json
+                row.append(json.dumps(clinical_data.get("missing_reasons") or {}, ensure_ascii=False, sort_keys=True))
             elif col_key == "created_at":
                 row.append(created_vn)
             elif col_key == "classification":
@@ -291,6 +373,8 @@ class ExportService:
                 row.append(who_code_str)
             elif col_key == "who_diagnosis":
                 row.append(who_diag_str)
+            elif col_key in ("who_diagnosis_1", "who_diagnosis_2"):
+                row.append(diagnosis_slots.get(1 if col_key == "who_diagnosis_1" else 2, ""))
             elif col_key == "tien_can_phau_thuat_ubt":
                 val = clinical_data.get("tien_can_phau_thuat_ubt", "")
                 note = clinical_data.get("tien_can_phau_thuat_ubt_ghi_chu", "")

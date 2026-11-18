@@ -20,7 +20,7 @@ def upgrade() -> None:
     # 1. form_versions
     op.create_table(
         "form_versions",
-        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), autoincrement=True, nullable=False),
         sa.Column("form_key", sa.String(length=64), nullable=False),
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False, server_default="published"),
@@ -37,7 +37,7 @@ def upgrade() -> None:
     # 2. submissions
     op.create_table(
         "submissions",
-        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), autoincrement=True, nullable=False),
         sa.Column("submission_uuid", sa.CHAR(36), nullable=False),
         sa.Column("form_version_id", sa.BigInteger(), nullable=False),
         sa.Column("payload_hash", sa.String(length=64), nullable=False),
@@ -56,7 +56,7 @@ def upgrade() -> None:
     # 3. admin_users
     op.create_table(
         "admin_users",
-        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), autoincrement=True, nullable=False),
         sa.Column("username", sa.String(length=64), nullable=False),
         sa.Column("password_hash", sa.String(length=255), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),

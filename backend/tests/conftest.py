@@ -40,7 +40,8 @@ def setup_database():
 def db_session():
     connection = engine.connect()
     transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
+    connection.exec_driver_sql("BEGIN")
+    session = TestingSessionLocal(bind=connection, join_transaction_mode="create_savepoint")
 
     # Seed default published form v1
     form_file_path = os.path.join(os.path.dirname(__file__), "..", "..", "form-definitions", "ovarian-pathology-v1.json")
@@ -98,3 +99,10 @@ def client(db_session, monkeypatch):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_client(client):
+    from app.core.security import create_access_token
+    client.headers["Authorization"] = "Bearer " + create_access_token({"sub": "admin"})
+    return client

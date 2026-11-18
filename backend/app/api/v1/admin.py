@@ -2,15 +2,16 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, update, or_, case
 from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.exceptions import AppException, NotFoundException
 from app.database import get_db
 from app.models.admin_user import AdminUser
-from app.models.submission import Submission
+from app.models.submission import Submission, EXPORTABLE_STATES
 from app.models.form_version import FormVersion
 from app.repositories.submission_repo import SubmissionRepository
 from app.schemas.admin import (
@@ -24,7 +25,6 @@ from app.schemas.submission import SubmissionDetailResponse
 from app.schemas.form import FormSchemaDefinition, FormVersionResponse
 from app.services.auth_svc import AuthService
 from app.services.export_svc import ExportService
-from app.services.google_sheets_svc import trigger_google_sheets_delete, resync_all_to_google_sheets
 
 settings = get_settings()
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -68,6 +68,9 @@ def get_statistics(
 ):
     """Get high-level survey statistics."""
     stats = SubmissionRepository.get_stats(db)
+    spreadsheet_id = (settings.GOOGLE_SHEETS_SPREADSHEET_ID or "").strip()
+    if spreadsheet_id:
+        stats["google_sheet_url"] = f"https://docs.google.com/spreadsheets/d/{quote(spreadsheet_id, safe='')}/edit#gid=0"
     return AdminStatsResponse(**stats)
 
 
@@ -79,6 +82,7 @@ def list_submissions(
     classification: Optional[str] = Query(None),
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
+    q: str = Query("", max_length=200),
     db: Session = Depends(get_db),
     _: AdminUser = Depends(AuthService.get_current_admin)
 ):
@@ -91,7 +95,8 @@ def list_submissions(
         form_version=form_version,
         classification=classification,
         date_from=date_from,
-        date_to=date_to
+        date_to=date_to,
+        q=q,
     )
 
     result_items = []
@@ -176,8 +181,9 @@ def export_csv(
 @router.delete("/submissions/{sub_id}", status_code=status.HTTP_200_OK)
 def delete_submission(
     sub_id: int,
+    reason: str = Query(..., min_length=3, max_length=2000),
     db: Session = Depends(get_db),
-    _: AdminUser = Depends(AuthService.get_current_admin)
+    user: AdminUser = Depends(AuthService.get_current_admin)
 ):
     """Delete a single submission (Admin only)."""
     stmt = select(Submission).where(Submission.id == sub_id)
@@ -185,14 +191,22 @@ def delete_submission(
     if not sub:
         raise NotFoundException(f"Không tìm thấy phiếu #{sub_id}.")
 
-    sub_uuid = str(sub.submission_uuid)
-    db.delete(sub)
-    db.commit()
+    from app.api.v1.records import transition, Transition
+    transition(sub.submission_uuid, Transition(revision=sub.revision, action="cancel", note=reason), db, user)
+    return {"message": f"Đã hủy phiếu #{sub_id}; dữ liệu và lịch sử vẫn được giữ lại."}
 
-    # Trigger deletion on Google Sheets
-    trigger_google_sheets_delete(sub_uuid)
 
-    return {"message": f"Đã xóa thành công phiếu #{sub_id}."}
+@router.get("/export.xlsx")
+def export_xlsx(db: Session = Depends(get_db), _: AdminUser = Depends(AuthService.get_current_admin)):
+    output = ExportService.xlsx_file(db)
+    def chunks():
+        try:
+            while data := output.read(65536):
+                yield data
+        finally:
+            output.close()
+    return StreamingResponse(chunks(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="ovarian_submissions_{datetime.now():%Y%m%d_%H%M%S}.xlsx"', "Cache-Control":"no-store"})
 
 
 @router.post("/google-sheets/resync")
@@ -200,20 +214,59 @@ def resync_google_sheets(
     db: Session = Depends(get_db),
     _: AdminUser = Depends(AuthService.get_current_admin)
 ):
-    """Resync all current database submissions to Google Sheets."""
-    res = resync_all_to_google_sheets(db)
-    if res.get("status") != "success":
-        raise AppException(502, "GOOGLE_SHEETS_SYNC_ERROR", res.get("message", "Không thể đồng bộ Google Sheets."))
-    return res
+    """Queue writes and report destination rows that the record queue cannot remove."""
+    from app.services import google_sheets_svc as sheets
+    from app.services.record_sync import sync_error_message
+    warning = None
+    extra_count = None
+    if sheets.settings.GOOGLE_SHEETS_SPREADSHEET_ID:
+        try:
+            _, remote = sheets._read_sheet_snapshot()
+            local_keys = {str(key) for key in db.scalars(select(Submission.submission_uuid))}
+            extra_count = sum(count for key, count in remote.items() if key not in local_keys)
+            if extra_count:
+                warning = (
+                    f"Sheet còn {extra_count} dòng phiếu không còn trong hệ thống. "
+                    "Các dòng này chưa được xóa. Nút đồng bộ chỉ gửi các phiếu hiện có; "
+                    "hãy xóa các dòng cũ trên Sheet bằng tài khoản có quyền chỉnh sửa."
+                )
+        except Exception as error:
+            warning = "Chưa đối chiếu được dữ liệu cũ trên Sheet. " + sync_error_message(error)
+    else:
+        warning = "Chưa cấu hình Sheet đích để đối chiếu. Phiếu trong hệ thống vẫn được giữ lại."
+    result = db.execute(update(Submission).where(or_(
+        Submission.workflow_status.in_(EXPORTABLE_STATES),
+        (Submission.synced_revision.is_not(None)) & (Submission.workflow_status.in_(("changes_requested", "cancelled"))),
+    )).values(sync_status=case((Submission.sync_status == "syncing", "syncing"), else_="pending"), sync_error=None, sync_attempts=0))
+    db.commit()
+    response = {"status": "queued", "count": result.rowcount}
+    if warning:
+        response.update(warning=warning, sheet_extra_count=extra_count)
+    return response
 
 
 @router.post("/forms/publish", response_model=FormVersionResponse)
 def publish_form(
     payload: FormSchemaDefinition,
     db: Session = Depends(get_db),
-    _: AdminUser = Depends(AuthService.get_current_admin)
+    _: AdminUser = Depends(AuthService.require_form_admin)
 ):
     """Publish a new form schema version from develop mode."""
+    from app.repositories.form_repo import FormRepository
+    current = FormRepository.get_published_by_key(db, payload.form_key)
+    if current and (current.schema_json.get("clinical_fields") is not None or payload.clinical_fields is not None):
+        # The legacy WHO editor must preserve the clinical snapshot and use the
+        # same publication queue and concurrency checks as the form manager.
+        from app.api.v1.form_builder import ConfigurationChange, publish_configuration
+        from app.models.form_management import FormDraft
+        from app.core.exceptions import ConflictException
+        if db.get(FormDraft, payload.form_key):
+            raise ConflictException("Đang có bản nháp trong Quản lý biểu mẫu. Mở mục đó để đối chiếu và xuất bản.")
+        if payload.clinical_fields is None:
+            payload.clinical_fields = FormSchemaDefinition.model_validate(current.schema_json).clinical_fields
+        return_form = publish_configuration(ConfigurationChange(base_version=payload.version, schema=payload,
+            draft_revision=0), db, _)
+        return FormRepository.get_by_key_and_version(db, payload.form_key, return_form["version"])
     stmt = (
         select(FormVersion)
         .where(FormVersion.form_key == payload.form_key)

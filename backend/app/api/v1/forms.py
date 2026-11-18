@@ -17,6 +17,13 @@ def get_current_published_form(db: Session = Depends(get_db)):
     return form_ver
 
 
+@router.get("/clinical-contract")
+def clinical_contract():
+    from app.services.clinical_validation import CONTRACT
+    from app.services.study_identity import HOSPITALS, PHASES
+    return {**CONTRACT, "research_identity": {"hospitals": HOSPITALS, "phases": PHASES}}
+
+
 @router.get("/{version}", response_model=FormVersionResponse)
 def get_form_by_version(version: int, db: Session = Depends(get_db)):
     """Fetch a specific version of the form schema."""

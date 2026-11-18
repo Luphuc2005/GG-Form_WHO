@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 from pydantic import BaseModel, Field, ConfigDict
 
 
 class SelectedOptionPayload(BaseModel):
     id: str
+    slot: Optional[Literal[1, 2]] = None
     children: List["SelectedOptionPayload"] = Field(default_factory=list)
     other_text: Optional[str] = None
 

@@ -6,6 +6,8 @@ from sqlalchemy.types import JSON, CHAR, TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
+EXPORTABLE_STATES = ("submitted", "approved", "changes_requested")
+
 
 class GUID(TypeDecorator):
     """Platform-independent GUID/UUID type.
@@ -61,3 +63,23 @@ class Submission(Base):
     )
 
     form_version = relationship("FormVersion", back_populates="submissions")
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True, index=True)
+    public_access_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    identity_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    study_code: Mapped[str | None] = mapped_column(String(16), nullable=True, unique=True)
+    study_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reviewer_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+    workflow_status: Mapped[str] = mapped_column(String(24), default="submitted", server_default="submitted", nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    encounter_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_note: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    sync_status: Mapped[str] = mapped_column(String(24), default="not_requested", server_default="not_requested", nullable=False)
+    sync_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sync_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    synced_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sync_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    owner = relationship("AdminUser", foreign_keys=[owner_id])
+    reviewer = relationship("AdminUser", foreign_keys=[reviewer_id])

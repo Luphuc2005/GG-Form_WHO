@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +36,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Lưu ý khi khởi tạo DB/Schema lúc startup (có thể DB chưa migrate): {e}")
 
-    yield
+    from app.services.record_sync import sync_loop
+    sync_task = asyncio.create_task(sync_loop()) if settings.APP_ENV != "test" else None
+    try:
+        yield
+    finally:
+        if sync_task:
+            sync_task.cancel()
+            try:
+                await sync_task
+            except asyncio.CancelledError:
+                pass
 
     # Shutdown
     logger.info("Tắt ứng dụng...")

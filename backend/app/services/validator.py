@@ -18,11 +18,10 @@ class FormSchemaValidator:
         # 1. Check required top-level fields
         for field_id, field_def in self.fields_by_id.items():
             if field_id == "classification":
-                if not is_clinical or (answers.classification and answers.classification != "unspecified"):
+                if not is_clinical or answers.classification != "unspecified":
                     self._validate_classification(field_def, answers.classification)
             elif field_id == "pathology":
-                if not is_clinical or (answers.pathology and answers.pathology.selected):
-                    self._validate_pathology(field_def, answers.pathology)
+                self._validate_pathology(field_def, answers.pathology)
             elif field_def.required and not is_clinical:
                 raise ValidationErrorException(
                     f"Trường bắt buộc '{field_def.label}' ({field_id}) không có trong payload."
@@ -41,10 +40,14 @@ class FormSchemaValidator:
                 )
 
     def _validate_pathology(self, field_def: FormFieldSchema, pathology_data: Any) -> None:
+        if pathology_data is None:
+            raise ValidationErrorException("Vui lòng chọn kết quả giải phẫu bệnh.")
         selected_list: List[SelectedOptionPayload] = pathology_data.selected
         top_other_text: Optional[str] = pathology_data.other_text
+        from app.services.pathology_results import results_by_slot
+        slots = results_by_slot(selected_list)
 
-        if field_def.required and not selected_list:
+        if field_def.required and 1 not in slots:
             msg = field_def.error_message or "Vui lòng chọn ít nhất một kết quả giải phẫu bệnh."
             raise ValidationErrorException(msg)
 
@@ -54,11 +57,10 @@ class FormSchemaValidator:
         }
 
         # Track whether any node with has_other_text was selected
-        other_node_selected = False
-        other_node_text: Optional[str] = None
+        primary_other_selected = False
 
         # Recursively validate selected options tree
-        for root_item in selected_list:
+        for slot, root_item in slots.items():
             if root_item.id not in root_options_map:
                 raise ValidationErrorException(
                     f"Mục giải phẫu bệnh '{root_item.id}' không tồn tại trong danh mục schema."
@@ -67,23 +69,17 @@ class FormSchemaValidator:
             node_def = root_options_map[root_item.id]
             is_other, text = self._validate_option_node_recursive(node_def, root_item)
             if is_other:
-                other_node_selected = True
-                other_node_text = text
-
-        # If top_other_text was supplied, treat it as other text as well
-        final_other_text = (other_node_text or top_other_text or "").strip()
-
-        # Check 'other' rules:
-        if other_node_selected:
-            if not final_other_text:
-                raise ValidationErrorException(
-                    "Mục 'Khác' đã được chọn nhưng chưa điền thông tin chi tiết (vui lòng ghi rõ)."
-                )
-        else:
-            if final_other_text:
+                if slot == 1:
+                    primary_other_selected = True
+                final_text = (text or (top_other_text if slot == 1 else "") or "").strip()
+                if not final_text:
+                    raise ValidationErrorException(f"WHO {slot}: đã chọn Khác thì cần ghi rõ kết quả.")
+            elif root_item.other_text and root_item.other_text.strip():
                 raise ValidationErrorException(
                     "Mục 'Khác' không được chọn nhưng lại có nội dung văn bản đi kèm."
                 )
+        if top_other_text and top_other_text.strip() and not primary_other_selected:
+            raise ValidationErrorException("Mục 'Khác' không được chọn nhưng lại có nội dung văn bản đi kèm.")
 
     def _validate_option_node_recursive(
         self,

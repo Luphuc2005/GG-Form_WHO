@@ -20,6 +20,9 @@ class AdminStatsResponse(BaseModel):
     today_submissions: int
     by_classification: Dict[str, int]
     by_form_version: Dict[int, int]
+    by_workflow: Dict[str, int]
+    by_sync: Dict[str, int]
+    google_sheet_url: str | None = None
 
 
 class AdminSubmissionListItem(BaseModel):

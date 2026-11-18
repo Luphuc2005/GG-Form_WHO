@@ -1,0 +1,338 @@
+{
+  "version": 4,
+  "fields": {
+    "so_hs": "Số HS",
+    "ho_ten": "Họ Tên",
+    "nam_sinh": "Năm Sinh",
+    "nam_kham": "Năm Khám",
+    "dia_chi": "Địa chỉ",
+    "nghe_nghiep": "Nghề nghiệp",
+    "tuoi_phau_thuat": "Tuổi BN khi phẫu thuật",
+    "para": "PARA",
+    "kinh_nguyet": "Kinh nguyệt",
+    "thoi_diem_phat_hien": "Thời điểm phát hiện UBT",
+    "tien_can_phau_thuat_ubt": "Tiền căn phẫu thuật UBT",
+    "tien_can_phau_thuat_ubt_ghi_chu": "Ghi chú GPB của lần phẫu thuật trước",
+    "tien_can_ung_thu_khac": "Tiền căn ung thư khác",
+    "tien_can_ung_thu_khac_ghi_chu": "Ghi chú tiền căn ung thư khác",
+    "tien_can_lac_nmtc": "Tiền căn lạc nội mạc tử cung",
+    "co_thai": "Có thai",
+    "ubt_xoan": "UBT xoắn",
+    "ubt_vo": "UBT vỡ",
+    "ubt_nhiem_trung": "UBT nhiễm trùng",
+    "ca_125": "CA 125",
+    "he4": "HE4",
+    "roma": "ROMA",
+    "afp": "AFP",
+    "beta_hcg": "beta hCG",
+    "sa_so_luong_u": "Số lượng u (Siêu âm)",
+    "sa_mo_buong_trung": "Mô buồng trứng (Siêu âm)",
+    "sa_phan_loai_u": "Phân loại u (Siêu âm)",
+    "sa_phan_am": "Phản âm",
+    "sa_kich_thuoc_u": "Kích thước u (Siêu âm)",
+    "sa_bo_ngoai": "Bờ ngoài",
+    "sa_bo_trong": "Bờ trong",
+    "sa_so_luong_thuy": "Số lượng thùy",
+    "sa_kich_thuoc_phan_dac": "Kích thước phần đặc (Siêu âm)",
+    "sa_bong_lung": "Bóng lưng",
+    "sa_nang_trong_phan_dac": "Nang trong phần đặc",
+    "sa_nang_trong_phan_dac_so_luong": "Số lượng nang trong phần đặc",
+    "sa_choi": "Chồi",
+    "sa_tang_sinh_mach_mau": "Tăng sinh mạch máu",
+    "sa_dich_o_bung": "Dịch ổ bụng (Siêu âm)",
+    "sa_ton_thuong_nmtc": "Tổn thương NMTC",
+    "sa_ton_thuong_nmtc_ghi_chu": "Ghi chú tổn thương nội mạc tử cung",
+    "iota_benign": "IOTA - Benign (%)",
+    "iota_malignant": "IOTA - Malignant (%)",
+    "iota_borderline": "IOTA - Borderline (%)",
+    "iota_stage1": "IOTA - Stage I (%)",
+    "iota_stage2_4": "IOTA - Stage II-IV (%)",
+    "iota_metastatic": "IOTA - Metastatic (%)",
+    "sa_iota_adnex": "Tổng nguy cơ Malignant từ ADNEX",
+    "sa_orads": "ORADS (Siêu âm)",
+    "mri_mo_buong_trung": "Mô buồng trứng (MRI)",
+    "mri_so_luong_u": "Số lượng u (MRI)",
+    "mri_dang_ton_thuong": "Dạng tổn thương (MRI)",
+    "mri_kich_thuoc_u": "Kích thước u (MRI)",
+    "mri_dich_nang_t1w": "Dịch nang MRI (T1W)",
+    "mri_dich_nang_t2w": "Dịch nang MRI (T2W)",
+    "mri_dich_nang": "Dịch nang (T1w/T2w)",
+    "mri_thanh_phan_mo": "Thành phần mỡ",
+    "mri_phan_dac": "Phần đặc (MRI)",
+    "mri_kich_thuoc_phan_dac": "Kích thước phần đặc (MRI)",
+    "mri_khuech_tan": "Khuếch tán",
+    "mri_tang_sinh_mach_mau": "Tăng sinh mạch máu (MRI)",
+    "mri_ngam_thuoc": "Đặc điểm ngấm thuốc tương phản từ",
+    "mri_hach": "Hạch",
+    "mri_dich_o_bung": "Dịch ổ bụng (MRI)",
+    "mri_ton_thuong_co_quan_khac": "Tổn thương cơ quan khác",
+    "mri_ket_luan": "Kết luận MRI",
+    "pt_chan_doan_truoc": "Chẩn đoán trước phẫu thuật",
+    "pt_chan_doan_sau": "Chẩn đoán sau phẫu thuật",
+    "pt_phuong_phap": "Phương pháp phẫu thuật",
+    "pt_sinh_thiet_lanh": "Sinh thiết lạnh",
+    "pt_sinh_thiet_lanh_ghi_chu": "Ghi chú kết quả sinh thiết lạnh",
+    "pt_ton_thuong": "Mô tả tổn thương u khi phẫu thuật",
+    "pt_dich_o_bung": "Dịch ổ bụng khi phẫu thuật",
+    "hospital_code": "Mã bệnh viện",
+    "hospital_cancer_center": "Bệnh viện trung tâm ung thư (1/0)",
+    "study_phase": "Giai đoạn nghiên cứu",
+    "encounter_code": "Mã đợt điều trị",
+    "treatment_date": "Ngày điều trị/phẫu thuật"
+  },
+  "choices": {
+    "hospital_cancer_center": [
+      0,
+      1
+    ],
+    "study_phase": [
+      "R",
+      "P"
+    ],
+    "kinh_nguyet": [
+      "Còn hành kinh",
+      "Đã mãn kinh"
+    ],
+    "thoi_diem_phat_hien": [
+      "Mới phát hiện",
+      "Đã biết > 3 tháng, không có sự thay đổi kích thước u",
+      "Đã biết > 3 tháng, có sự thay đổi kích thước u",
+      "Đã biết > 3 tháng, không có dữ liệu theo dõi u",
+      "Không có dữ liệu"
+    ],
+    "tien_can_phau_thuat_ubt": [
+      "Không",
+      "Có",
+      "Ghi chú GPB nếu có"
+    ],
+    "tien_can_ung_thu_khac": [
+      "Không",
+      "Có",
+      "Ghi chú loại ung thư nếu có"
+    ],
+    "tien_can_lac_nmtc": [
+      "Không",
+      "Có"
+    ],
+    "co_thai": [
+      "Không",
+      "Có"
+    ],
+    "ubt_xoan": [
+      "Không",
+      "Có"
+    ],
+    "ubt_vo": [
+      "Không",
+      "Có"
+    ],
+    "ubt_nhiem_trung": [
+      "Không",
+      "Có"
+    ],
+    "sa_so_luong_u": [
+      "Trái",
+      "Phải",
+      "2 bên"
+    ],
+    "sa_mo_buong_trung": [
+      "Còn",
+      "Không quan sát thấy",
+      "Không đánh giá"
+    ],
+    "sa_phan_loai_u": [
+      "Đơn thùy",
+      "Đơn thùy đặc",
+      "Đa thùy",
+      "Đa thùy đặc",
+      "U đặc",
+      "Không phân loại"
+    ],
+    "sa_bo_ngoai": [
+      "Không đều",
+      "Đều",
+      "Không đánh giá"
+    ],
+    "sa_bo_trong": [
+      "Không trơn láng",
+      "Trơn láng",
+      "Không đánh giá"
+    ],
+    "sa_so_luong_thuy": [
+      "0",
+      "1",
+      "2-10",
+      ">10"
+    ],
+    "sa_bong_lung": [
+      "Không",
+      "Có"
+    ],
+    "sa_tang_sinh_mach_mau": [
+      "Không tăng sinh",
+      "1",
+      "2",
+      "3",
+      "4",
+      "Không đánh giá"
+    ],
+    "sa_dich_o_bung": [
+      "Không",
+      "Cùng đồ",
+      "2 hố chậu",
+      "khoảng gan thận",
+      "Dịch màng phổi"
+    ],
+    "sa_ton_thuong_nmtc": [
+      "Không",
+      "Có"
+    ],
+    "mri_mo_buong_trung": [
+      "Còn",
+      "Không quan sát thấy",
+      "Không đánh giá"
+    ],
+    "mri_so_luong_u": [
+      "Trái",
+      "Phải",
+      "2 bên"
+    ],
+    "mri_dang_ton_thuong": [
+      "Nang đơn thùy",
+      "Nang đa thùy",
+      "U đặc"
+    ],
+    "mri_thanh_phan_mo": [
+      "Không",
+      "Có"
+    ],
+    "mri_phan_dac": [
+      "Không",
+      "Có"
+    ],
+    "mri_khuech_tan": [
+      "Không giới hạn",
+      "Giới hạn",
+      "Không đánh giá"
+    ],
+    "mri_tang_sinh_mach_mau": [
+      "Không tăng sinh",
+      "Tăng sinh ít",
+      "Tăng sinh nhiều",
+      "Không đánh giá"
+    ],
+    "mri_ngam_thuoc": [
+      "type 1",
+      "type 2",
+      "type 3",
+      "kém hơn cơ tử cung",
+      "nhiều hơn cơ tử cung",
+      "Không đánh giá"
+    ],
+    "mri_hach": [
+      "Không",
+      "Có"
+    ],
+    "mri_dich_o_bung": [
+      "Không",
+      "Cùng đồ",
+      "2 hố chậu",
+      "khoảng gan thận",
+      "Dịch màng phổi"
+    ],
+    "sa_orads": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+    ],
+    "pt_chan_doan_truoc": [
+      "u buồng trứng",
+      "ung thư buồng trứng"
+    ],
+    "pt_chan_doan_sau": [
+      "u buồng trứng",
+      "ung thư buồng trứng"
+    ],
+    "pt_sinh_thiet_lanh": [
+      "Không",
+      "Lành tính",
+      "Ác tính"
+    ],
+    "sa_nang_trong_phan_dac": [
+      "Không",
+      "Có"
+    ],
+    "sa_choi": [
+      "Không",
+      "Có",
+      "1",
+      "2",
+      "3",
+      ">3"
+    ],
+    "mri_dich_nang_t1w": [
+      "thấp",
+      "cao",
+      "trung gian",
+      "cao và thấp",
+      "không xác định"
+    ],
+    "mri_dich_nang_t2w": [
+      "cao",
+      "thấp",
+      "trung gian",
+      "cao và thấp",
+      "không xác định"
+    ],
+    "missing_reasons": [
+      "not_done",
+      "not_documented",
+      "not_applicable"
+    ],
+    "pt_dich_o_bung": [
+      "Không có",
+      "Lượng ít (< 100ml)",
+      "Lượng vừa (100 - 500ml)",
+      "Lượng nhiều (> 500ml)",
+      "Không đánh giá"
+    ]
+  },
+  "multi_choices": {
+    "sa_phan_am": [
+      "Trống",
+      "Kém",
+      "Hỗn hợp",
+      "Kính mờ",
+      "Xuất huyết",
+      "Dày sáng"
+    ],
+    "pt_phuong_phap": [
+      "cắt u",
+      "cắt phần phụ",
+      "cắt tử cung",
+      "cắt mạc nối lớn và phân giai đoạn"
+    ]
+  },
+  "legacy_choices": {
+    "sa_so_luong_u": [
+      "1 bên"
+    ],
+    "mri_so_luong_u": [
+      "1 bên"
+    ],
+    "mri_dang_ton_thuong": [
+      "Nang và đặc",
+      "chứa mỡ",
+      "Nang"
+    ],
+    "pt_sinh_thiet_lanh": [
+      "Có"
+    ]
+  },
+  "retired_fields": [
+    "pt_dich_o_bung"
+  ]
+}

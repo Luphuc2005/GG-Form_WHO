@@ -1,5 +1,4 @@
 """Reconciliation contract tests; no requests are sent to a real spreadsheet."""
-import csv
 import io
 import json
 import unittest
@@ -25,23 +24,26 @@ class FakeResponse(io.BytesIO):
 
 
 class FakeSheet:
-    """Model the legacy webhook which only appends data.row, not data.rows."""
+    """Model the authenticated Apps Script webhook."""
     def __init__(self):
         self.headers = [label for _, label in FORM_COLUMNS]
         self.rows = []
         self.posts = []
         self.fail_at = None
-        self.content_type = "text/csv; charset=utf-8"
+        self.snapshot_available = True
         self.ignore_writes = False
 
     def open(self, request, timeout):
-        if request.get_method() == "GET":
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(self.headers)
-            writer.writerows(self.rows)
-            return FakeResponse(output.getvalue().encode("utf-8-sig"), self.content_type)
+        assert request.get_method() == "POST"
         payload = json.loads(request.data)
+        if payload.get("token") != "synthetic-token" or payload.get("spreadsheet_id") != "test-sheet":
+            return FakeResponse(b'{"status":"unauthorized"}', "application/json")
+        if payload.get("action") == "snapshot":
+            if not self.snapshot_available:
+                return FakeResponse(b'{"status":"error"}', "application/json")
+            rows = [[str(cell) if cell is not None else "" for cell in row]
+                    for row in [self.headers, *self.rows]]
+            return FakeResponse(json.dumps({"status": "snapshot", "rows": rows}).encode(), "application/json")
         self.posts.append(payload)
         if self.fail_at == len(self.posts):
             return FakeResponse(b'{"status":"error","message":"appendRow failed"}', "application/json")
@@ -60,6 +62,7 @@ class GoogleSheetsSyncTests(unittest.TestCase):
             patch.object(sync, "settings", SimpleNamespace(
                 GOOGLE_SHEETS_WEBHOOK_URL="https://example.invalid/webhook",
                 GOOGLE_SHEETS_SPREADSHEET_ID="test-sheet",
+                GOOGLE_SHEETS_WEBHOOK_TOKEN="synthetic-token",
             )),
             patch.object(sync.urllib.request, "urlopen", side_effect=self.sheet.open),
         ]
@@ -79,7 +82,7 @@ class GoogleSheetsSyncTests(unittest.TestCase):
             self.session.flush()
             sub = Submission(
                 submission_uuid=uuid.uuid4(), form_version_id=form.id,
-                payload_hash="test", classification="benign",
+                payload_hash="test", classification="benign", workflow_status="approved",
                 answers={"pathology": {"selected": []}, "clinical_data": {}},
             )
             self.session.add(sub)
@@ -105,6 +108,14 @@ class GoogleSheetsSyncTests(unittest.TestCase):
         self.assertEqual(len(self.sheet.posts), posts_before)
         self.assertTrue(all("rows" not in payload for payload in self.sheet.posts))
 
+    def test_trimmed_hospital_sheet_keeps_its_headers_during_resync(self):
+        study_labels = {"Mã nghiên cứu", "Giai đoạn nghiên cứu", "Bệnh viện trung tâm ung thư (1/0)"}
+        self.sheet.headers = [label for label in self.sheet.headers if label not in study_labels]
+        result = sync.resync_all_to_google_sheets(self.session)
+        self.assertEqual(result["status"], "success")
+        self.assertTrue(all(post["headers"] == self.sheet.headers for post in self.sheet.posts))
+        self.assertTrue(all(len(row) == len(self.sheet.headers) for row in self.sheet.rows))
+
     def test_http_200_application_error_is_not_success(self):
         self.sheet.fail_at = 1
         result = sync.resync_all_to_google_sheets(self.session)
@@ -129,7 +140,7 @@ class GoogleSheetsSyncTests(unittest.TestCase):
         self.assertEqual(len(self.sheet.rows), len(self.submissions))
 
     def test_unreadable_sheet_is_rejected_before_writing(self):
-        self.sheet.content_type = "text/html"
+        self.sheet.snapshot_available = False
         self.assertEqual(sync.resync_all_to_google_sheets(self.session)["status"], "error")
         self.assertEqual(self.sheet.posts, [])
 
@@ -157,15 +168,40 @@ class GoogleSheetsSyncTests(unittest.TestCase):
         self.assertEqual(sync.resync_all_to_google_sheets(self.session)["status"], "error")
         self.assertEqual(self.sheet.posts, [])
 
-    def test_admin_api_returns_failure_for_failed_sync(self):
+    def test_invalid_webhook_token_blocks_reconciliation(self):
+        sync.settings.GOOGLE_SHEETS_WEBHOOK_TOKEN = "incorrect"
+        self.assertEqual(sync.resync_all_to_google_sheets(self.session)["status"], "error")
+        self.assertEqual(self.sheet.posts, [])
+
+    def test_admin_api_queues_jobs_without_claiming_remote_success(self):
         from app.api.v1 import admin
-        from app.core.exceptions import AppException
-        with patch.object(admin, "resync_all_to_google_sheets", return_value={
-            "status": "error", "message": "Not verified",
-        }):
-            with self.assertRaises(AppException) as caught:
-                admin.resync_google_sheets(db=self.session, _=None)
-        self.assertEqual(caught.exception.status_code, 502)
+        result = admin.resync_google_sheets(db=self.session, _=None)
+        self.assertEqual(result, {"status": "queued", "count": 2})
+        self.assertEqual(self.sheet.posts, [])
+        self.session.expire_all()
+        self.assertTrue(all(sub.sync_status == "pending" for sub in self.submissions))
+
+    def test_empty_database_resync_reports_old_remote_rows_instead_of_success(self):
+        from app.api.v1 import admin
+        self.sheet.rows.append(sync._submission_row(self.submissions[0])[1])
+        for sub in self.submissions:
+            self.session.delete(sub)
+        self.session.commit()
+        result = admin.resync_google_sheets(db=self.session, _=None)
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["sheet_extra_count"], 1)
+        self.assertIn("chưa được xóa", result["warning"])
+        self.assertEqual(self.sheet.posts, [])
+        self.assertEqual(len(self.sheet.rows), 1)
+
+    def test_read_error_is_reported_without_losing_queued_records(self):
+        from app.api.v1 import admin
+        self.sheet.snapshot_available = False
+        result = admin.resync_google_sheets(db=self.session, _=None)
+        self.assertEqual(result["count"], 2)
+        self.assertIn("Chưa đối chiếu", result["warning"])
+        self.assertIsNone(result["sheet_extra_count"])
+        self.assertEqual(self.sheet.posts, [])
 
 
 if __name__ == "__main__":

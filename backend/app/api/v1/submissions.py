@@ -10,6 +10,8 @@ from app.schemas.submission import (
     SubmissionStatusResponse,
 )
 from app.services.submission_svc import SubmissionService
+from app.models.admin_user import AdminUser
+from app.services.auth_svc import AuthService
 
 router = APIRouter(prefix="/submissions", tags=["Submissions"])
 
@@ -17,20 +19,28 @@ router = APIRouter(prefix="/submissions", tags=["Submissions"])
 @router.post("", response_model=SubmissionResponse, status_code=status.HTTP_201_CREATED)
 def submit_survey(
     payload: SubmissionCreateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(AuthService.get_current_admin),
 ):
     """
     Submit survey answers.
     Idempotent operation: retrying with the same submission_uuid and payload
     returns the existing successful record without duplicating.
     """
-    return SubmissionService.create_submission(db, payload)
+    from app.services.clinical_validation import validate_clinical
+    from app.repositories.form_repo import FormRepository
+    from app.schemas.form import FormSchemaDefinition
+    version = FormRepository.get_by_key_and_version(db, "ovarian-pathology-who", payload.form_version)
+    schema = FormSchemaDefinition.model_validate(version.schema_json) if version else None
+    validate_clinical(payload.answers.clinical_data or {}, final=True, schema=schema)
+    return SubmissionService.create_submission(db, payload, actor=user)
 
 
 @router.get("/{submission_uuid}/status", response_model=SubmissionStatusResponse)
 def get_submission_status(
     submission_uuid: uuid.UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(AuthService.get_current_admin),
 ):
     """Check submission status by its UUID."""
     sub = SubmissionRepository.get_by_uuid(db, submission_uuid)

@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     # Real-time Google Sheets Webhook integration (Optional)
     GOOGLE_SHEETS_WEBHOOK_URL: str | None = None
     GOOGLE_SHEETS_SPREADSHEET_ID: str | None = None
+    GOOGLE_SHEETS_WEBHOOK_TOKEN: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
