@@ -15,13 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy pyproject.toml first for layer caching
-COPY pyproject.toml .
+COPY backend/pyproject.toml .
 RUN pip install --upgrade pip && pip install .
 
 # Copy application files
-COPY app ./app
-COPY alembic ./alembic
-COPY alembic.ini .
+COPY backend/app ./app
+COPY backend/alembic ./alembic
+COPY backend/alembic.ini .
+COPY form-definitions ./form-definitions
 
 # Expose backend port
 EXPOSE 8000

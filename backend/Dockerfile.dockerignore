@@ -1,0 +1,13 @@
+**
+!backend/
+!backend/pyproject.toml
+!backend/alembic.ini
+!backend/app/
+!backend/app/**
+!backend/alembic/
+!backend/alembic/**
+!form-definitions/
+!form-definitions/**
+**/__pycache__/
+**/.env*
+**/*.db
