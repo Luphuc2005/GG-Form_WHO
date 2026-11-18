@@ -8,11 +8,13 @@ Hệ thống lưu trữ dữ liệu y khoa khảo sát quan trọng, do đó vi�
 
 Chạy script:
 ```bash
-./scripts/backup_db.sh
+bash scripts/backup_db.sh
 ```
 
 Tệp sao lưu được xuất ra theo định dạng nén tối ưu của PostgreSQL (`-Fc`), có gắn mốc thời gian:
 `ovarian_YYYY-MM-DD_HHMMSS.dump`
+
+Mặc định lưu trong `/opt/ovarian-survey/backups/` nếu có thư mục cài đặt, hoặc `./backups/` ở gốc checkout. Biến shell `BACKUP_DIR` cho phép chỉ định thư mục khác.
 
 Kiểm tra danh sách các bản sao lưu đã tạo:
 ```bash
@@ -31,7 +33,7 @@ sudo crontab -e
 Thêm dòng lệnh sau vào cuối tệp:
 ```cron
 # Sao lưu cơ sở dữ liệu khảo sát vào lúc 02:00 sáng mỗi ngày
-0 2 * * * /opt/ovarian-survey/scripts/backup_db.sh >> /var/log/ovarian_backup.log 2>&1
+0 2 * * * /bin/bash /opt/ovarian-survey/scripts/backup_db.sh >> /var/log/ovarian_backup.log 2>&1
 ```
 
 ---
@@ -46,6 +48,6 @@ Khi cần khôi phục lại cơ sở dữ liệu:
    ```
 2. Chạy lệnh khôi phục:
    ```bash
-   ./scripts/restore_db.sh /opt/ovarian-survey/backups/ovarian_2026-09-10_160000.dump
+   bash scripts/restore_db.sh /opt/ovarian-survey/backups/ovarian_2026-09-10_160000.dump
    ```
 3. Hệ thống sẽ hiển thị cảnh báo và yêu cầu xác nhận `DONG_Y` trước khi thực hiện.
