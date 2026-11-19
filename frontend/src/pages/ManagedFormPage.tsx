@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, FileText, Send } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, FileText, Send, Trash2 } from "lucide-react";
 import type { ComprehensiveFormPageProps } from "./ComprehensiveFormPage";
 import { ClinicalField } from "../types/schema";
 import { SURGICAL_FINDINGS } from "../components/SurgicalProtocolFields";
@@ -19,6 +19,12 @@ export const SECTION_NAMES: Record<string, string> = {
   sec5: "Cộng hưởng từ",
   sec6: "Phẫu thuật",
   extra: "Thông tin bổ sung",
+};
+const SECTION_MARKERS: Record<string, string> = {
+  sec1: "I", sec2: "II", sec3: "III", sec4: "IV", sec5: "V", sec6: "VI", extra: "+",
+};
+const SECTION_SHORT_NAMES: Record<string, string> = {
+  sec1: "Hành chính", sec2: "Lâm sàng", sec3: "Markers", sec4: "Siêu âm", sec5: "MRI", sec6: "Phẫu thuật", extra: "Bổ sung",
 };
 const filled = (v: unknown) =>
   v !== undefined &&
@@ -71,9 +77,11 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     phases: Record<string, string>;
   }>({ hospitals: {}, phases: {} });
   const [identityError, setIdentityError] = useState("");
+  const navigationRef = useRef<HTMLElement>(null);
+  const [activeSection, setActiveSection] = useState(compact ? "sec1" : "identity");
   const [open, setOpen] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
-      Object.keys(SECTION_NAMES).map((k) => [k, !compact || k === "sec1"]),
+      [...Object.keys(SECTION_NAMES), "who"].map((k) => [k, !compact || k === "sec1"]),
     ),
   );
   const options =
@@ -234,6 +242,34 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
   const sections = Object.entries(SECTION_NAMES).filter(([key]) =>
     fields.some((f) => f.section === key && visible(f)),
   );
+  const sectionStats = (key: string) => {
+    const current = activeFields.filter(field => field.section === key);
+    return { filled: current.filter(field => filled(form[field.id])).length, total: current.length };
+  };
+  const whoCount = Number(Boolean(diagnosis)) + Number(Boolean(secondDiagnosis));
+  const navigation = [
+    ...(!compact ? [{ key: "identity", marker: "#", label: "Mã phiếu", short: "Mã phiếu", filled: Number(filled(form.hospital_code)) + Number(filled(form.study_phase)), total: 2 }] : []),
+    ...sections.map(([key, label]) => ({ key, marker: SECTION_MARKERS[key], label, short: SECTION_SHORT_NAMES[key], ...sectionStats(key) })),
+    { key: "who", marker: "VII", label: "Giải phẫu bệnh WHO", short: "GPB WHO", filled: whoCount, total: 2 },
+  ];
+  const allSectionsOpen = [...sections.map(([key]) => key), "who"].every(key => open[key]);
+  const navigate = (key: string) => {
+    setActiveSection(key);
+    setOpen(previous => ({ ...previous, [key]: true }));
+    window.setTimeout(() => {
+      const element = document.getElementById(`managed-${key}`);
+      if (!element) return;
+      const offset = compact ? 85 : window.innerWidth <= 1040 ? (navigationRef.current?.offsetHeight || 100) + 18 : 20;
+      window.scrollTo({ top: Math.max(0, element.getBoundingClientRect().top + window.scrollY - offset),
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }, 40);
+  };
+  const clearAll = () => {
+    if (!window.confirm("Xóa toàn bộ nội dung đang nhập của phiếu này? Thay đổi sẽ được lưu vào bản nháp.")) return;
+    const multi = new Set(fields.filter(field => field.type === "multiselect").map(field => field.id));
+    setForm(previous => Object.fromEntries(Object.keys(previous).map(key => [key, key === "missing_reasons" ? {} : multi.has(key) ? [] : ""])));
+    setDiagnosis(""); setOther(""); setSecondDiagnosis(""); setSecondOther(""); setError("");
+  };
   const iotaEntered = IOTA.filter((k) => filled(form[k]));
   const iotaTotal = iotaEntered.reduce((sum, k) => sum + Number(form[k]), 0);
   return (
@@ -241,12 +277,12 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
       className={`form-container managed-form ${compact ? "admin-case-form" : "entry-form"}`}
     >
       {!compact && (
-        <header className="form-card header-card">
+        <header className="form-card header-card entry-header">
           <div className="entry-header-main">
             <span className="entry-header-icon">
               <FileText size={25} />
             </span>
-            <div>
+            <div className="entry-header-copy">
               <span className="entry-kicker">
                 THU THẬP DỮ LIỆU NGHIÊN CỨU · PHIÊN BẢN {schema.version}
               </span>
@@ -256,46 +292,43 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
                   "Nhập thông tin theo hồ sơ nguồn. Các ô có dấu * cần điền trước khi gửi."}
               </p>
             </div>
+            <button type="button" className="clear-form-button" aria-label="Xóa tất cả thông tin"
+              onClick={clearAll} disabled={busy || readOnly}><Trash2 size={15} aria-hidden="true"/><span>Xóa tất cả thông tin</span></button>
           </div>
           <div className="entry-progress">
             <div className="entry-progress-label">
               <span>Thông tin đã nhập</span>
               <strong>
-                {count} / {total} mục
+                {count}<span> / {total} mục</span>
               </strong>
             </div>
-            <progress
-              aria-label="Tiến độ nhập thông tin"
-              value={count}
-              max={total}
-            />
+            <div className="entry-progress-track" role="progressbar" aria-label="Tiến độ nhập thông tin"
+              aria-valuemin={0} aria-valuemax={total} aria-valuenow={count}>
+              <span style={{width: `${Math.min(100, count / total * 100)}%`}}/>
+            </div>
             <p>Các mục chưa có thông tin có thể để trống.</p>
           </div>
         </header>
       )}
-      <nav className="sticky-nav-wrapper" aria-label="Các mục trong phiếu">
-        <div className="entry-nav-heading">
+      <nav ref={navigationRef} className="sticky-nav-wrapper" aria-label="Các mục trong phiếu">
+        {!compact && <div className="entry-nav-heading">
           <strong>Các mục trong phiếu</strong>
-        </div>
+          <button type="button" className="entry-collapse-toggle" aria-expanded={allSectionsOpen}
+            onClick={() => setOpen(previous => ({...previous, ...Object.fromEntries([...sections.map(([key]) => key), "who"].map(key => [key, !allSectionsOpen]))}))}>
+            {allSectionsOpen ? "Thu gọn tất cả" : "Mở tất cả"}<ChevronDown size={14} className={allSectionsOpen ? "" : "is-collapsed"}/>
+          </button>
+        </div>}
         <div className="sticky-nav-list">
-          {!compact && (
-            <a className="nav-pill-btn" href="#managed-identity">
-              Mã phiếu
-            </a>
-          )}
-          {sections.map(([key, name]) => (
-            <a
-              className="nav-pill-btn"
-              key={key}
-              href={`#managed-${key}`}
-              onClick={() => setOpen((s) => ({ ...s, [key]: true }))}
-            >
-              {name}
-            </a>
-          ))}
-          <a className="nav-pill-btn" href="#managed-who">
-            Giải phẫu bệnh WHO
-          </a>
+          {navigation.map(item => <button type="button" key={item.key}
+            className={`nav-pill-btn ${activeSection === item.key ? "active" : ""}`}
+            aria-current={activeSection === item.key ? "step" : undefined}
+            aria-controls={`managed-${item.key}`} onClick={() => navigate(item.key)}>
+            {compact ? `${item.marker}. ${item.label}` : <>
+              <span className="entry-nav-roman">{item.marker}</span><span className="entry-nav-label">{item.label}</span>
+              <span className="entry-nav-short">{item.short}</span>
+              <span className={`entry-nav-count ${item.filled === item.total ? "is-filled" : ""}`}>{item.filled}/{item.total}</span>
+            </>}
+          </button>)}
         </div>
       </nav>
       <form onSubmit={submit}>
@@ -391,16 +424,24 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
                 aria-expanded={Boolean(open[key])}
                 onClick={() => setOpen((s) => ({ ...s, [key]: !s[key] }))}
               >
-                <h2>{name}</h2>
-                <ChevronDown size={20} />
+                <div className="section-header-left">
+                  <span className="section-roman-badge">{SECTION_MARKERS[key]}</span>
+                  <div className="section-title-wrap"><h3>{name}</h3></div>
+                </div>
+                <div className="section-header-right">
+                  <span className={`section-count-badge ${sectionStats(key).filled === sectionStats(key).total ? "is-complete" : ""}`}>
+                    {sectionStats(key).filled}/{sectionStats(key).total} mục
+                  </span>
+                  <ChevronDown size={19} className="entry-section-chevron" aria-hidden="true"/>
+                </div>
               </button>
               {open[key] && (
-                <div className="section-content">
+                <div className="section-content section-body">
                   <div className="form-grid-3">
                     {fields
                       .filter((f) => f.section === key && visible(f))
                       .map((field) => (
-                        <div className="form-item" key={field.id}>
+                        <div className={`form-item ${["textarea", "multiselect"].includes(field.type) ? "form-col-span-full" : ""}`} key={field.id}>
                           <label
                             className="field-label"
                             htmlFor={
@@ -443,9 +484,17 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
               )}
             </section>
           ))}
-          <section id="managed-who" className="form-card">
-            <h2>Giải phẫu bệnh WHO 1 & 2</h2>
-            <WhoResultsFields
+          <section id="managed-who" className={`section-accordion ${open.who ? "is-open" : ""}`}>
+            <button type="button" className="section-header-btn" aria-expanded={Boolean(open.who)}
+              onClick={() => setOpen(previous => ({ ...previous, who: !previous.who }))}>
+              <div className="section-header-left"><span className="section-roman-badge">VII</span>
+                <div className="section-title-wrap"><h3>Giải phẫu bệnh WHO</h3></div>
+              </div>
+              <div className="section-header-right"><span className={`section-count-badge ${whoCount === 2 ? "is-complete" : ""}`}>{whoCount}/2 mục</span>
+                <ChevronDown size={19} className="entry-section-chevron" aria-hidden="true"/>
+              </div>
+            </button>
+            {open.who && <div className="section-content section-body"><WhoResultsFields
               options={options}
               disabled={readOnly || busy}
               values={[
@@ -461,17 +510,17 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
                   setSecondOther(value.other);
                 }
               }}
-            />
+            /></div>}
           </section>
           {!compact && !readOnly && (
-            <footer className="managed-submit">
-              <span>
+            <footer className="entry-submit-bar managed-submit">
+              <div className="entry-submit-copy"><strong>Kiểm tra thông tin trước khi gửi</strong><span>
                 <Check size={16} />
                 {saveStatus || "Kiểm tra thông tin trước khi gửi"}
-              </span>
+              </span></div>
               <button
                 type="submit"
-                className="admin-primary"
+                className="btn-submit"
                 disabled={busy || Boolean(identityError)}
               >
                 <Send size={17} />

@@ -1,5 +1,7 @@
 # Cập nhật phần protocol phẫu thuật
 
+Website đã xuất bản cấu hình v3 và admin đã tự thêm câu Số lượng u. Nếu mục đích hiện tại là sửa bố cục và giữ câu đã thêm, dùng [hướng dẫn sửa giao diện form](HUONG_DAN_SUA_GIAO_DIEN_FORM.md). Hướng dẫn bên dưới dành cho cập nhật bộ câu hỏi chuẩn trong code.
+
 Bản này thêm bốn mục vào phần VI trên form nhập liệu và màn hình xem/sửa phiếu admin:
 
 1. Số lượng u: Trái, Phải, 2 bên, cùng danh mục với siêu âm và MRI.

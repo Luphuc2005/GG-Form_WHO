@@ -1124,7 +1124,8 @@
   background: #f1f7f7;
 }
 
-.managed-form .section-header-btn h2 {
+.managed-form .section-header-btn h2,
+.managed-form .section-header-btn h3 {
   font-size: 15.5px;
   font-weight: 700;
   color: #0f172a;
@@ -1150,7 +1151,8 @@
   gap: 8px;
 }
 
-.managed-checks label {
+.managed-checks label,
+.public-entry .managed-form .managed-checks label {
   display: inline-flex;
   flex-direction: row;
   gap: 7px;
@@ -1216,6 +1218,22 @@
 
 .managed-form .form-title {
   overflow-wrap: anywhere;
+}
+
+/* A managed schema uses the same public grid as the standard entry form.
+   Keep the header above both columns, regardless of added question labels. */
+.managed-form > .entry-header {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.managed-form .entry-header-copy {
+  flex: 1;
+}
+
+.managed-form .form-item textarea {
+  width: 100%;
+  resize: vertical;
 }
 
 .managed-form .field-hint {
