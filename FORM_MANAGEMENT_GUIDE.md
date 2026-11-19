@@ -17,6 +17,12 @@ Form có hai ô kết quả GPB: **WHO 1** là kết quả chính bắt buộc, 
 
 ## Đồng nhất dữ liệu
 
+### Đơn vị của 5 chỉ số xét nghiệm
+
+Sau khi bật cấu hình đơn vị theo [hướng dẫn triển khai](deploy/HUONG_DAN_DON_VI_XET_NGHIEM.md), các ô CA 125, HE4, ROMA, AFP, beta hCG hiển thị kết quả gốc và đơn vị cùng nhau. Có thể chọn câu Đơn vị trong trang quản lý để thêm đơn vị vào danh sách, rồi xuất bản phiên bản mới; không cần deploy cho từng đơn vị/bệnh viện. Giữ lựa chọn Khác và Chưa xác nhận.
+
+Đơn vị và phần ghi đơn vị khác đi cùng nhóm, hiển thị và cột xuất của chỉ số. Hệ thống chỉ yêu cầu đơn vị khi có kết quả, kể cả kết quả bằng 0. Không bật bắt buộc cho mọi phiếu ở các ô đơn vị. Các lựa chọn không thực hiện phép quy đổi. Dữ liệu cũ không được tự gán đơn vị; có thể bổ sung thủ công sau khi đối chiếu phiếu xét nghiệm.
+
 - Database là nguồn dữ liệu chính. Mỗi bản biểu mẫu lưu một cấu hình đầy đủ. Form nhập và trang sửa phiếu lấy đúng cấu hình của phiên bản đó; backend kiểm tra theo cùng cấu hình.
 - Excel, CSV và Sheet dùng cùng bộ mã trường và tên cột hiện hành. Khi đổi tên, dữ liệu được ghép bằng mã trường và các tên lịch sử. Không tạo một cột mới chỉ vì tên câu hỏi đổi.
 - Câu hỏi mới có ô trống trên phiếu cũ vì trước đó chưa thu thông tin; hệ thống không tự điền dữ liệu.
