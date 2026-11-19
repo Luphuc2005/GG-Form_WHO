@@ -6,6 +6,32 @@ OTHER_UNIT = "Khác"
 UNKNOWN_UNIT = "Chưa xác nhận"
 
 
+def biomarker_configuration_errors(schema, contract):
+    fields = {field.id: field for field in schema.clinical_fields or []}
+    errors = []
+    for marker, definition in contract.get("biomarkers", {}).items():
+        unit, other = fields.get(definition["unit_field"]), fields.get(definition["other_unit_field"])
+        if unit is None and other is None:
+            continue
+        parent = fields.get(marker)
+        if parent is None or parent.type != "number" or unit is None or other is None:
+            errors.append(f"{marker}: cần giữ cùng nhau kết quả số, đơn vị và ô ghi đơn vị khác")
+            continue
+        if unit.type != "select" or not {OTHER_UNIT, UNKNOWN_UNIT}.issubset(unit.choices):
+            errors.append(f"{unit.label}: dùng Chọn một và giữ lựa chọn Khác, Chưa xác nhận")
+        if other.type != "text" or other.show_when != unit.id or other.show_values != [OTHER_UNIT]:
+            errors.append(f"{other.label}: dùng văn bản ngắn, chỉ hiển thị khi đơn vị là Khác")
+        if unit.section != parent.section or other.section != parent.section:
+            errors.append(f"{parent.label}: đặt đơn vị và đơn vị khác cùng nhóm với kết quả")
+        if parent.active and (not unit.active or not other.active):
+            errors.append(f"{parent.label}: giữ hiển thị các ô đơn vị khi còn thu thập kết quả")
+        if parent.export and (not unit.export or not other.export):
+            errors.append(f"{parent.label}: cần xuất đơn vị cùng kết quả để đối chiếu dữ liệu")
+        if unit.required or other.required:
+            errors.append(f"{unit.label}: hệ thống chỉ yêu cầu đơn vị khi có kết quả, không bật bắt buộc cho mọi phiếu")
+    return errors
+
+
 def validate_biomarker_units(data, contract, previous_data, final=False, schema=None):
     errors = []
     configured = {field.id: field for field in schema.clinical_fields or []} if schema is not None else {}
