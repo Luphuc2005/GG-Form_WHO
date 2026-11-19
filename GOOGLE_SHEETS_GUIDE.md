@@ -2,6 +2,8 @@
 
 PostgreSQL là nguồn dữ liệu chính. Backend dùng Web App để ghi phiếu và đọc lại tab `gid=0` nhằm xác minh kết quả. Sheet có thể giữ ở chế độ **Hạn chế** trong Drive.
 
+Backend cũng tương thích với Web App cũ chỉ hỗ trợ ghi/gỡ dòng. Nếu Web App trả lỗi `appendRow()` cho yêu cầu đọc lại, backend thử đối chiếu bằng bản xuất CSV vốn đã truy cập được từ máy chủ. Kết quả vẫn phải khớp UUID và nội dung trước khi báo đồng bộ thành công. Nếu CSV yêu cầu đăng nhập, cần cập nhật Apps Script theo các bước dưới đây. Bản Apps Script mới hỗ trợ token, đọc Sheet riêng tư và cập nhật cấu trúc cột.
+
 ## Thiết lập hoặc nâng cấp Apps Script
 
 1. Nếu đang dùng Sheet thật, tạo một bản sao dự phòng trước khi đổi mã. Mở **Tiện ích mở rộng → Apps Script** và dán toàn bộ nội dung [deploy/google_apps_script.js](deploy/google_apps_script.js).

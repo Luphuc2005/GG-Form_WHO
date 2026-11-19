@@ -1,7 +1,12 @@
 import logging
+import csv
+import io
 import urllib.request
+import urllib.parse
+import urllib.error
 import json
 import threading
+import time
 import uuid
 from collections import Counter
 from sqlalchemy import select
@@ -14,6 +19,10 @@ from app.services.export_svc import ExportService
 settings = get_settings()
 logger = logging.getLogger("google_sheets")
 _sync_lock = threading.Lock()
+
+
+class LegacyWebhookError(RuntimeError):
+    """The deployed Apps Script only supports row writes and deletes."""
 
 
 def _send_webhook(payload: dict, expected_status: str = "success") -> dict:
@@ -38,15 +47,39 @@ def _send_webhook(payload: dict, expected_status: str = "success") -> dict:
             result = json.loads(response.read().decode("utf-8-sig"))
         except (ValueError, UnicodeError) as exc:
             raise RuntimeError("Google Sheets không trả về xác nhận JSON hợp lệ.") from exc
+    if isinstance(result, dict) and result.get("status") == "unauthorized":
+        raise RuntimeError("Token hoặc Spreadsheet ID không khớp với Script Properties của Apps Script.")
+    if (isinstance(result, dict) and result.get("status") == "error"
+            and "appendRow()" in str(result.get("message", ""))
+            and expected_status in ("snapshot", "schema_updated")):
+        raise LegacyWebhookError("Apps Script đang chạy bản cũ. Cập nhật mã và triển khai Phiên bản mới của Web App để đồng bộ cột.")
     if not isinstance(result, dict) or result.get("status") != expected_status:
         raise RuntimeError("Google Sheets chưa xác nhận thao tác; kiểm tra bản triển khai Apps Script.")
     return result
 
 
+def _read_legacy_sheet_rows() -> list[list[str]]:
+    """Use the existing readable CSV export when the old webhook has no snapshot action."""
+    spreadsheet_id = urllib.parse.quote(settings.GOOGLE_SHEETS_SPREADSHEET_ID.strip(), safe="")
+    url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=csv&gid=0&_sync={time.time_ns()}"
+    req = urllib.request.Request(url, headers={"Cache-Control": "no-cache"})
+    unavailable = "Apps Script đang chạy bản cũ và chưa đọc được Sheet để xác minh. Cập nhật mã và triển khai Phiên bản mới của Web App."
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            if "text/csv" not in response.headers.get("Content-Type", "").lower():
+                raise RuntimeError(unavailable)
+            return list(csv.reader(io.StringIO(response.read().decode("utf-8-sig"))))
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(unavailable) from error
+
+
 def _read_sheet_data() -> tuple[list[str], Counter, list[list[str]]]:
     """Read the configured sheet to verify UUIDs instead of trusting a sent count."""
-    result = _send_webhook({"action": "snapshot"}, expected_status="snapshot")
-    rows = result.get("rows")
+    try:
+        result = _send_webhook({"action": "snapshot"}, expected_status="snapshot")
+        rows = result.get("rows")
+    except LegacyWebhookError:
+        rows = _read_legacy_sheet_rows()
     if not isinstance(rows, list) or any(
         not isinstance(row, list) or not all(isinstance(cell, str) for cell in row)
         for row in rows

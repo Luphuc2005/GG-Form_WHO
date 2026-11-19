@@ -26,6 +26,10 @@ def sync_error_message(error):
             "Cấu trúc cột Sheet không hợp lệ.",
             "Cấu trúc cột Sheet khác biểu mẫu xuất dữ liệu.",
             "Sheet có dòng không chứa mã phiếu UUID hợp lệ; chưa thể đối chiếu.",
+            "Chưa cấu hình GOOGLE_SHEETS_WEBHOOK_TOKEN.",
+            "Token hoặc Spreadsheet ID không khớp với Script Properties của Apps Script.",
+            "Apps Script đang chạy bản cũ. Cập nhật mã và triển khai Phiên bản mới của Web App để đồng bộ cột.",
+            "Apps Script đang chạy bản cũ và chưa đọc được Sheet để xác minh. Cập nhật mã và triển khai Phiên bản mới của Web App.",
         }
         if str(error) in messages:
             return str(error)

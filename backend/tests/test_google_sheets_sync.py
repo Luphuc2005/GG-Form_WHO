@@ -1,5 +1,6 @@
 """Reconciliation contract tests; no requests are sent to a real spreadsheet."""
 import io
+import csv
 import json
 import unittest
 import uuid
@@ -32,12 +33,30 @@ class FakeSheet:
         self.fail_at = None
         self.snapshot_available = True
         self.ignore_writes = False
+        self.legacy_webhook = False
+        self.csv_readable = True
+        self.csv_reads = 0
 
     def open(self, request, timeout):
+        if request.get_method() == "GET":
+            self.csv_reads += 1
+            assert self.legacy_webhook
+            assert request.full_url.startswith("https://docs.google.com/spreadsheets/d/test-sheet/export?")
+            if not self.csv_readable:
+                return FakeResponse(b"<html>Sign in</html>", "text/html")
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(self.headers)
+            writer.writerows(self.rows)
+            return FakeResponse(output.getvalue().encode("utf-8-sig"), "text/csv")
         assert request.get_method() == "POST"
         payload = json.loads(request.data)
         if payload.get("token") != "synthetic-token" or payload.get("spreadsheet_id") != "test-sheet":
             return FakeResponse(b'{"status":"unauthorized"}', "application/json")
+        if self.legacy_webhook and payload.get("action") in ("snapshot", "schema"):
+            return FakeResponse(json.dumps({
+                "status": "error", "message": "Error: The rowContents passed to appendRow() must be nonempty.",
+            }).encode(), "application/json")
         if payload.get("action") == "snapshot":
             if not self.snapshot_available:
                 return FakeResponse(b'{"status":"error"}', "application/json")
@@ -172,6 +191,34 @@ class GoogleSheetsSyncTests(unittest.TestCase):
         sync.settings.GOOGLE_SHEETS_WEBHOOK_TOKEN = "incorrect"
         self.assertEqual(sync.resync_all_to_google_sheets(self.session)["status"], "error")
         self.assertEqual(self.sheet.posts, [])
+        self.assertEqual(self.sheet.csv_reads, 0)
+
+    def test_legacy_webhook_uses_readable_csv_and_verifies_without_duplicates(self):
+        self.sheet.legacy_webhook = True
+        result = sync.resync_all_to_google_sheets(self.session)
+        self.assertEqual(result["status"], "success")
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["count"], len(self.submissions))
+        writes = len(self.sheet.posts)
+        again = sync.resync_all_to_google_sheets(self.session)
+        self.assertEqual(again["added_count"], 0)
+        self.assertEqual(len(self.sheet.posts), writes)
+        self.assertGreater(self.sheet.csv_reads, 0)
+
+    def test_legacy_private_sheet_requires_script_update_before_writing(self):
+        self.sheet.legacy_webhook = True
+        self.sheet.csv_readable = False
+        result = sync.resync_all_to_google_sheets(self.session)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("Apps Script đang chạy bản cũ", result["message"])
+        self.assertEqual(self.sheet.posts, [])
+
+    def test_legacy_silent_success_is_rejected_by_csv_readback(self):
+        self.sheet.legacy_webhook = True
+        self.sheet.ignore_writes = True
+        result = sync.resync_all_to_google_sheets(self.session)
+        self.assertEqual(result["status"], "error")
+        self.assertNotIn("verified", result)
 
     def test_admin_api_queues_jobs_without_claiming_remote_success(self):
         from app.api.v1 import admin
