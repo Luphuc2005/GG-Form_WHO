@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { FileText, Download, Search, SlidersHorizontal, RefreshCw, ChevronLeft, ChevronRight, MoreHorizontal, LogOut, Users, ExternalLink, History, Cloud, Trash2, X, Info } from "lucide-react";
+import { FileText, Download, Search, SlidersHorizontal, RefreshCw, ChevronLeft, ChevronRight, MoreHorizontal, LogOut, Users, ExternalLink, History, Cloud, Trash2, RotateCcw, X, Info } from "lucide-react";
 import { FormSchemaDefinition } from "../types/schema";
 import { Account, ClinicalRecord, STATE_LABELS, SYNC_LABELS, workflowApi } from "../api/workflow";
 import { resyncGoogleSheets } from "../api/client";
@@ -13,7 +13,7 @@ interface Props { user: Account; onLogout: () => void; onReports: () => void; on
 interface Page { items: ClinicalRecord[]; total: number; page: number; total_pages: number }
 interface HistoryEvent { id: number; actor: string; action: string; revision: number; note: string | null; created_at: string; before_answers: ClinicalRecord["answers"] | null; after_answers: ClinicalRecord["answers"] | null }
 const time = (s: string | null) => s ? new Date(s.endsWith("Z") || /[+-]\d\d:\d\d$/.test(s) ? s : s+"Z").toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "—";
-const ACTION_LABELS: Record<string, string> = { create: "Tạo phiếu", save: "Lưu nháp", submit: "Gửi phiếu", edit: "Sửa nội dung", approve: "Duyệt phiếu", return: "Yêu cầu bổ sung", reopen: "Mở lại phiếu", cancel: "Hủy phiếu" };
+const ACTION_LABELS: Record<string, string> = { create: "Tạo phiếu", save: "Lưu nháp", submit: "Gửi phiếu", edit: "Sửa nội dung", approve: "Duyệt phiếu", return: "Yêu cầu bổ sung", reopen: "Mở lại phiếu", cancel: "Hủy phiếu", trash: "Chuyển vào thùng rác", restore: "Khôi phục phiếu" };
 const isFilled = (value: unknown) => value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && !value.length) && !(typeof value === "object" && value !== null && !Object.keys(value).length);
 
 export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFormBuilder }) => {
@@ -44,22 +44,34 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
   const [showInfo, setShowInfo] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [note, setNote] = useState("");
+  const [trashTarget, setTrashTarget] = useState<ClinicalRecord | null>(null);
+  const [trashError, setTrashError] = useState("");
+  const [recordNotice, setRecordNotice] = useState("");
   const [history, setHistory] = useState<HistoryEvent[] | null>(null);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(10);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [diagnosisLabels, setDiagnosisLabels] = useState<Record<string, string>>({});
   const menuRef = useRef<HTMLDivElement>(null);
+  const trashDialogRef = useRef<HTMLFormElement>(null);
+  const trashTriggerRef = useRef<HTMLButtonElement | null>(null);
   const requestSequence = useRef(0);
   useEffect(() => {setAdminEditing(false);}, [selected?.workflow_status]);
   const filterCount = [owner, from, to].filter(Boolean).length;
   const leave = () => !hasUnsaved || window.confirm("Có thay đổi chưa lưu. Bạn muốn rời phiếu?");
+  const canManageTrash = ["admin", "doctor"].includes(user.role);
+
+  useEffect(() => {
+    if (!trashTarget) return;
+    const previous = trashTriggerRef.current;
+    return () => { if (previous?.isConnected) previous.focus(); };
+  }, [trashTarget]);
 
   // Entering /admin always shows the list, rather than reviving an old edit session.
   useEffect(() => { sessionStorage.removeItem(`active-record:${user.id}`); }, [user.id]);
   useEffect(() => {
     const closeMenu = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setShowMenu(false); };
-    const escape = (event: KeyboardEvent) => { if(event.key === "Escape") { setShowMenu(false); if(!busy) setCancelling(false); } };
+    const escape = (event: KeyboardEvent) => { if(event.key === "Escape") { setShowMenu(false); if(!busy) {setCancelling(false);setTrashTarget(null);} } };
     document.addEventListener("pointerdown", closeMenu); document.addEventListener("keydown",escape);
     return () => { document.removeEventListener("pointerdown",closeMenu); document.removeEventListener("keydown",escape); };
   }, [busy]);
@@ -76,7 +88,7 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
     if (from) params.set("date_from", `${from}T00:00:00+07:00`);
     if (to) params.set("date_to", `${to}T23:59:59.999999+07:00`);
     setLoading(true);
-    workflowApi<Page>(`/records?${params}`).then(result => { if (seq === requestSequence.current) { setData(result); setError(""); } })
+    workflowApi<Page>(`/records?${params}`).then(result => { if (seq === requestSequence.current) { setData(result); setPage(current => Math.min(current, result.total_pages)); setError(""); } })
       .catch(e => { if (seq === requestSequence.current) setError(e.message); }).finally(() => { if (seq === requestSequence.current) setLoading(false); });
     return () => { requestSequence.current++; };
   }, [page, query, state, owner, from, to, refresh, selected]);
@@ -112,6 +124,33 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
       const updated = await workflowApi<ClinicalRecord>(`/records/${selected.submission_uuid}/transition`, {method:"POST",body:JSON.stringify({revision:selected.revision,action:"cancel",note})});
       setSelected(updated); setAdminEditing(false); setCancelling(false); setNote(""); setHistory(null);
     } catch(e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+  const requestTrashChange = (record: ClinicalRecord, trigger: HTMLButtonElement) => {
+    trashTriggerRef.current = trigger;
+    setTrashError("");
+    setRecordNotice("");
+    setTrashTarget(record);
+  };
+  const changeTrash = async () => {
+    if (!trashTarget || busy) return;
+    const restoring = trashTarget.workflow_status === "trashed";
+    setBusy(true);
+    setTrashError("");
+    try {
+      await workflowApi<ClinicalRecord>(`/records/${trashTarget.submission_uuid}/${restoring ? "restore" : "trash"}`, {
+        method: "POST",
+        body: JSON.stringify({ revision: trashTarget.revision }),
+      });
+      sessionStorage.removeItem(`record-draft:${user.id}:${trashTarget.submission_uuid}`);
+      setTrashTarget(null);
+      toList();
+      setRecordNotice(restoring ? "Đã khôi phục phiếu về trạng thái trước khi xóa." : "Đã chuyển phiếu vào thùng rác. Bạn có thể khôi phục trong tab Thùng rác.");
+    } catch (e) {
+      setTrashError((e as Error).message);
+      setRefresh(n => n+1);
+    } finally {
+      setBusy(false);
+    }
   };
   const retrySync = async () => {
     if (!selected) return;
@@ -153,36 +192,104 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
       </nav>
     </header>
     {error && <p role="alert" className="workflow-error">{error}</p>}
+    {recordNotice && <div className="admin-notice" role="status"><span>{recordNotice}</span><button className="admin-icon" aria-label="Đóng thông báo phiếu" onClick={() => setRecordNotice("")}><X size={16}/></button></div>}
     {sheetNotice && <div className={`admin-notice ${sheetWarning ? "admin-notice-warning" : ""}`} role={sheetWarning ? "alert" : "status"}><span>{sheetNotice}</span><button className="admin-icon" aria-label="Đóng thông báo đồng bộ" onClick={() => setSheetNotice("")}><X size={16}/></button></div>}
     {selected ? <div className={`admin-detail-layout ${showInfo ? "with-panel" : ""}`}>
       <div className="admin-detail-main">
-        <CaseEditor key={`${selected.submission_uuid}:${selected.workflow_status}:${adminEditing ? "edit" : `view-${selected.revision}`}`} initial={selected} adminEdit={adminEditing} userId={user.id} onRecordChange={setSelected} onDirtyChange={setHasUnsaved} onExit={toList} onEdit={() => setAdminEditing(true)} onCancelEdit={() => setAdminEditing(false)} extraActions={<button className={`admin-secondary ${showInfo ? "is-active" : ""}`} type="button" aria-expanded={showInfo} aria-label="Thông tin và lịch sử phiếu" onClick={() => setShowInfo(v => !v)}><Info size={16}/><span>Thông tin</span></button>} />
+        <CaseEditor
+          key={`${selected.submission_uuid}:${selected.workflow_status}:${adminEditing ? "edit" : `view-${selected.revision}`}`}
+          initial={selected}
+          adminEdit={adminEditing}
+          userId={user.id}
+          onRecordChange={setSelected}
+          onDirtyChange={setHasUnsaved}
+          onExit={toList}
+          onEdit={() => setAdminEditing(true)}
+          onCancelEdit={() => setAdminEditing(false)}
+          extraActions={<>
+            <button className={`admin-secondary ${showInfo ? "is-active" : ""}`} type="button"
+              aria-expanded={showInfo} aria-label="Thông tin và lịch sử phiếu"
+              onClick={() => setShowInfo(v => !v)}>
+              <Info size={16}/><span>Thông tin</span>
+            </button>
+            {canManageTrash && <button
+              className={selected.workflow_status === "trashed" ? "admin-secondary" : "admin-danger"}
+              type="button" disabled={busy || hasUnsaved || adminEditing}
+              onClick={event => requestTrashChange(selected, event.currentTarget)}>
+              {selected.workflow_status === "trashed"
+                ? <><RotateCcw size={16}/>Khôi phục</>
+                : <><Trash2 size={16}/>Xóa phiếu</>}
+            </button>}
+          </>}
+        />
       </div>
       {showInfo && <button className="admin-panel-backdrop" aria-label="Đóng bảng thông tin" onClick={() => setShowInfo(false)}/>}
       {showInfo && <aside className="admin-detail-panel" aria-label="Thông tin phiếu">
         <div className="admin-panel-heading"><h2>Thông tin phiếu</h2><button className="admin-icon" aria-label="Đóng thông tin phiếu" onClick={() => setShowInfo(false)}><X size={18}/></button></div>
         <dl className="admin-metadata"><dt>Người nhập</dt><dd>{selected.owner_name}</dd><dt>Tạo lúc</dt><dd>{time(selected.created_at)}</dd><dt>Cập nhật gần nhất</dt><dd>{time(selected.updated_at || selected.created_at)}</dd><dt>Biểu mẫu</dt><dd>Phiên bản {selected.form_version}</dd></dl>
+        {selected.trashed_at && <p className="admin-note">Đã chuyển vào thùng rác lúc {time(selected.trashed_at)}. Trạng thái trước đó là {STATE_LABELS[selected.trashed_from_state || ""] || "Chưa xác định"}.</p>}
         {selected.review_note && <p className="admin-note">Ghi chú: {selected.review_note}</p>}
         <section className="admin-panel-section"><h3><Cloud size={16}/>Google Sheets</h3><p className={`admin-sync sync-${selected.sync_status}`}><span/>{SYNC_LABELS[selected.sync_status]}</p>{selected.sync_error && <p className="admin-muted">{selected.sync_error}</p>}<div className="admin-panel-buttons"><button disabled={busy || hasUnsaved} onClick={async () => {if(selected) {try{setSelected(await workflowApi<ClinicalRecord>(`/records/${selected.submission_uuid}`));}catch(e){setError((e as Error).message);}}}}>Cập nhật trạng thái</button>{["failed","not_configured"].includes(selected.sync_status) && <button disabled={busy} onClick={retrySync}>Thử đồng bộ lại</button>}</div></section>
         <section className="admin-panel-section"><h3><History size={16}/>Lịch sử thay đổi</h3><button className="admin-text-button" disabled={historyBusy} onClick={showHistory}>{historyBusy ? "Đang tải…" : history ? "Làm mới lịch sử" : "Xem lịch sử"}</button>
           {history && <div className="admin-history">{!history.length && <p className="admin-muted">Chưa có lịch sử trước khi nâng cấp.</p>}{history.slice(0,historyLimit).map(event => <article key={event.id}><strong>{ACTION_LABELS[event.action] || event.action}</strong><small>{event.actor} · {time(event.created_at)}</small>{event.note && <p>{event.note}</p>}{event.after_answers && <details><summary>Nội dung thay đổi</summary><ul>{Object.entries(event.after_answers.clinical_data || {}).filter(([key,value]) => JSON.stringify(value) !== JSON.stringify(event.before_answers?.clinical_data?.[key]) && (isFilled(value) || isFilled(event.before_answers?.clinical_data?.[key]))).map(([key,value]) => <li key={key}><b>{labels[key] || (key === "missing_reasons" ? "Lý do thiếu dữ liệu" : key)}</b><span>{displayValue(event.before_answers?.clinical_data?.[key])} → {displayValue(value)}</span></li>)}</ul>{JSON.stringify(event.before_answers?.pathology) !== JSON.stringify(event.after_answers.pathology) && <p>GPB: {diagnosisText(event.before_answers)} → {diagnosisText(event.after_answers)}</p>}</details>}</article>)}{history.length > historyLimit && <button className="admin-text-button" onClick={() => setHistoryLimit(n => n+10)}>Xem thêm</button>}</div>}
         </section>
-        {selected.workflow_status !== "cancelled" && <section className="admin-panel-section"><button className="admin-text-button danger" disabled={busy || hasUnsaved} onClick={() => {setNote("");setCancelling(true);}}><Trash2 size={15}/>Hủy phiếu này</button><p className="admin-muted">Dữ liệu và lịch sử được giữ lại.</p></section>}
+        {!["cancelled", "trashed"].includes(selected.workflow_status) && <section className="admin-panel-section"><button className="admin-text-button danger" disabled={busy || hasUnsaved} onClick={() => {setNote("");setCancelling(true);}}><Trash2 size={15}/>Hủy phiếu này</button><p className="admin-muted">Dữ liệu và lịch sử được giữ lại.</p></section>}
       </aside>}
     </div> : <div className="admin-dashboard">
     <AdminOverview stats={stats} error={statsError} onRetry={() => setRefresh(n => n+1)} onReports={onReports} onSync={syncSheets} syncing={sheetSyncBusy}/>
     <section className="admin-list-card">
-      <div className="admin-list-heading"><div><h2>Danh sách phiếu <span>{data.total}</span></h2><p>Xem và chỉnh sửa các phiếu sinh viên đã nhập.</p></div><button className="admin-icon" disabled={loading} aria-label="Làm mới danh sách" title="Làm mới danh sách" onClick={() => setRefresh(n => n+1)}><RefreshCw size={18} className={loading ? "is-spinning" : ""}/></button></div>
+      <div className="admin-list-heading"><div><h2>{state === "trashed" ? "Thùng rác" : "Danh sách phiếu"} <span>{data.total}</span></h2><p>{state === "trashed" ? "Khôi phục phiếu để đưa về danh sách và trạng thái trước khi xóa." : "Xem và chỉnh sửa các phiếu sinh viên đã nhập."}</p></div><button className="admin-icon" disabled={loading} aria-label="Làm mới danh sách" title="Làm mới danh sách" onClick={() => setRefresh(n => n+1)}><RefreshCw size={18} className={loading ? "is-spinning" : ""}/></button></div>
       <div className="admin-search-row"><label className="admin-search"><Search size={18}/><input aria-label="Tìm phiếu" placeholder="Tìm theo tên, số hồ sơ, mã phiếu hoặc mã đợt…" value={q} onChange={e => setQ(e.target.value)}/>{q && <button aria-label="Xóa tìm kiếm" className="admin-icon" onClick={() => setQ("")}><X size={16}/></button>}</label><button className={`admin-secondary ${showFilters ? "is-active" : ""}`} aria-expanded={showFilters} onClick={() => setShowFilters(v => !v)}><SlidersHorizontal size={16}/>Bộ lọc{filterCount > 0 && <span className="admin-filter-count">{filterCount}</span>}</button></div>
-      <div className="admin-tabs" aria-label="Lọc trạng thái phiếu">{[["","Tất cả"],["submitted","Đã gửi"],["draft","Nháp"],["cancelled","Đã hủy"]].map(([key,label]) => <button key={key} className={state === key ? "is-active" : ""} aria-pressed={state === key} onClick={() => {setState(key);setPage(1);}}>{label}</button>)}</div>
+      <div className="admin-tabs" aria-label="Lọc trạng thái phiếu">{[["","Tất cả"],["submitted","Đã gửi"],["draft","Nháp"],["cancelled","Đã hủy"],...(canManageTrash ? [["trashed","Thùng rác"]] : [])].map(([key,label]) => <button key={key} className={state === key ? "is-active" : ""} aria-pressed={state === key} onClick={() => {setState(key);setPage(1);}}>{label}</button>)}</div>
       {showFilters && <div className="admin-filter-panel"><label>Người nhập<select value={owner} onChange={e => {setOwner(e.target.value);setPage(1);}}><option value="">Tất cả người nhập</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.username}</option>)}</select></label><label>Từ ngày tạo<input type="date" value={from} onChange={e => {setFrom(e.target.value);setPage(1);}}/></label><label>Đến ngày tạo<input type="date" min={from} value={to} onChange={e => {setTo(e.target.value);setPage(1);}}/></label><label>Trạng thái chi tiết<select value={state} onChange={e => {setState(e.target.value);setPage(1);}}><option value="">Tất cả trạng thái</option>{Object.entries(STATE_LABELS).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label><button className="admin-text-button" onClick={resetFilters}>Xóa bộ lọc</button></div>}
       <div className="admin-table-wrap" aria-busy={loading}><table className="admin-table"><thead><tr><th>Bệnh nhân / Số hồ sơ</th><th>Mã phiếu / đợt điều trị</th><th>Ngày cập nhật</th><th>Trạng thái</th><th><span className="admin-sr-only">Thao tác</span></th></tr></thead><tbody>
-        {data.items.map(record => <tr key={record.submission_uuid}><td><strong className={!record.ho_ten ? "admin-placeholder" : ""}>{record.ho_ten || "Chưa có họ tên"}</strong><small>Số HS: <span className="admin-mono">{record.so_hs || "—"}</span> · #{record.reference_code}</small></td><td>{record.study_code || record.encounter_code || "Chưa cấp mã"}<small>{record.hospital_code || "Chưa có mã bệnh viện"}</small></td><td>{time(record.updated_at || record.created_at)}<small>{record.owner_name}</small></td><td><span className={`state-badge state-${record.workflow_status}`}>{STATE_LABELS[record.workflow_status]}</span><small className={`admin-sync sync-${record.sync_status}`}><span/>{SYNC_LABELS[record.sync_status]}</small></td><td><button className="admin-row-open" disabled={busy} onClick={() => open(record.submission_uuid)}>Xem phiếu<ChevronRight size={16}/></button></td></tr>)}
+        {data.items.map(record => <tr key={record.submission_uuid}>
+          <td><strong className={!record.ho_ten ? "admin-placeholder" : ""}>{record.ho_ten || "Chưa có họ tên"}</strong><small>Số HS: <span className="admin-mono">{record.so_hs || "—"}</span> · #{record.reference_code}</small></td>
+          <td>{record.study_code || record.encounter_code || "Chưa cấp mã"}<small>{record.hospital_code || "Chưa có mã bệnh viện"}</small></td>
+          <td>{time(record.updated_at || record.created_at)}<small>{record.owner_name}</small></td>
+          <td><span className={`state-badge state-${record.workflow_status}`}>{STATE_LABELS[record.workflow_status]}</span><small className={`admin-sync sync-${record.sync_status}`}><span/>{SYNC_LABELS[record.sync_status]}</small></td>
+          <td><div className="admin-row-actions">
+            <button className="admin-row-open" disabled={busy} onClick={() => open(record.submission_uuid)}>Xem phiếu<ChevronRight size={16}/></button>
+            {canManageTrash && <button
+              className={`admin-text-button ${record.workflow_status === "trashed" ? "" : "danger"}`}
+              disabled={busy || loading}
+              aria-label={`${record.workflow_status === "trashed" ? "Khôi phục" : "Xóa"} phiếu ${record.study_code || record.reference_code}`}
+              onClick={event => requestTrashChange(record, event.currentTarget)}
+            >{record.workflow_status === "trashed" ? <><RotateCcw size={15}/>Khôi phục</> : <><Trash2 size={15}/>Xóa</>}</button>}
+          </div></td>
+        </tr>)}
         {!data.items.length && <tr><td colSpan={5}><div className="admin-empty"><FileText size={30}/><strong>{loading ? "Đang tải phiếu…" : "Chưa có phiếu phù hợp"}</strong><p>{loading ? "" : query || state || filterCount ? "Thử đổi từ khóa hoặc bộ lọc." : "Phiếu sinh viên nhập sẽ xuất hiện tại đây."}</p>{!loading && (query || state || filterCount > 0) && <button className="admin-text-button" onClick={resetFilters}>Xem tất cả phiếu</button>}</div></td></tr>}
       </tbody></table></div>
       <footer className="admin-list-footer"><span role="status">{loading ? "Đang cập nhật…" : `${data.total} phiếu${query || state || filterCount ? " phù hợp" : ""}`}</span><div><button className="admin-icon" disabled={page <= 1 || loading} aria-label="Trang trước" onClick={() => setPage(p => p-1)}><ChevronLeft size={17}/></button><span>Trang {page} / {data.total_pages}</span><button className="admin-icon" disabled={page >= data.total_pages || loading} aria-label="Trang sau" onClick={() => setPage(p => p+1)}><ChevronRight size={17}/></button></div></footer>
     </section></div>}
     {showAccounts && <div className="workflow-overlay"><section className="admin-accounts-dialog" role="dialog" aria-modal="true" aria-labelledby="accounts-title"><div className="admin-panel-heading"><h2 id="accounts-title">Quản lý tài khoản</h2><button className="admin-icon" aria-label="Đóng quản lý tài khoản" onClick={() => setShowAccounts(false)}><X size={20}/></button></div><AccountManager selfId={user.id}/></section></div>}
     {cancelling && selected && <div className="workflow-overlay"><form className="workflow-dialog" role="dialog" aria-modal="true" aria-labelledby="cancel-title" onSubmit={e => {e.preventDefault();cancel();}}><h2 id="cancel-title">Hủy phiếu #{selected.reference_code}?</h2><p>Phiếu được loại khỏi dữ liệu xuất. Nội dung và lịch sử vẫn được giữ lại.</p><label>Lý do hủy<textarea autoFocus required maxLength={2000} value={note} onChange={e => setNote(e.target.value)}/></label>{error && <p role="alert" className="workflow-error">{error}</p>}<div className="admin-dialog-actions"><button type="button" className="admin-secondary" disabled={busy} onClick={() => setCancelling(false)}>Quay lại</button><button type="submit" className="admin-danger" disabled={busy}>{busy ? "Đang xử lý…" : "Hủy phiếu"}</button></div></form></div>}
+    {trashTarget && <div className="workflow-overlay">
+      <form ref={trashDialogRef} className="workflow-dialog" role="dialog" aria-modal="true"
+        aria-labelledby="trash-title" aria-describedby="trash-description" aria-busy={busy}
+        onSubmit={event => { event.preventDefault(); changeTrash(); }}
+        onKeyDown={event => {
+          if (event.key !== "Tab") return;
+          const buttons = trashDialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+          if (!buttons?.length) { event.preventDefault(); return; }
+          const first = buttons[0];
+          const last = buttons[buttons.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+          if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }}>
+        <h2 id="trash-title">{trashTarget.workflow_status === "trashed" ? "Khôi phục" : "Xóa"} phiếu {trashTarget.study_code || `#${trashTarget.reference_code}`}?</h2>
+        <p>{trashTarget.ho_ten || "Chưa có họ tên"} · Số HS {trashTarget.so_hs || "chưa nhập"}</p>
+        <p id="trash-description">{trashTarget.workflow_status === "trashed"
+          ? "Phiếu trở về trạng thái trước khi xóa. Phiếu đã gửi sẽ xuất hiện lại trong dữ liệu xuất và được xếp hàng đồng bộ Google Sheets."
+          : "Phiếu được chuyển vào thùng rác, loại khỏi thống kê và dữ liệu xuất, đồng thời xếp hàng gỡ khỏi Google Sheets. Bạn có thể khôi phục phiếu sau."}</p>
+        {trashError && <p className="workflow-error" role="alert">{trashError}</p>}
+        <div className="admin-dialog-actions">
+          <button autoFocus type="button" className="admin-secondary" disabled={busy} onClick={() => setTrashTarget(null)}>Quay lại</button>
+          <button type="submit" className={trashTarget.workflow_status === "trashed" ? "admin-primary" : "admin-danger"} disabled={busy}>
+            {busy ? "Đang xử lý…" : trashTarget.workflow_status === "trashed" ? "Khôi phục phiếu" : "Chuyển vào thùng rác"}
+          </button>
+        </div>
+      </form>
+    </div>}
   </div>;
 };

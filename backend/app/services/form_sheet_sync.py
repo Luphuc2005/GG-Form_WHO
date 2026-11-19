@@ -1,6 +1,7 @@
 """Durable schema synchronization, independent of whether any records exist."""
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import update
+from sqlalchemy import update, select
+from app.models.submission import Submission, EXPORTABLE_STATES
 from app.models.form_management import FormSheetJob
 from app.repositories.form_repo import FormRepository
 from app.services.form_configuration import FORM_KEY, export_definitions
@@ -10,13 +11,29 @@ from app.services import google_sheets_svc as sheets
 def ensure_schema(db):
     definitions, managed = export_definitions(db)
     if not managed:
-        return
+        # Add this newly collected field to a legacy trimmed Sheet when it is used.
+        # Preserve all existing headers and their column positions.
+        has_conclusion = db.scalar(select(Submission.id).where(
+            Submission.workflow_status.in_(EXPORTABLE_STATES),
+            Submission.answers["clinical_data"]["sa_ket_luan"].as_string().is_not(None),
+            Submission.answers["clinical_data"]["sa_ket_luan"].as_string() != "",
+        ).limit(1))
+        if has_conclusion is None:
+            return
     current = FormRepository.get_published_by_key(db, FORM_KEY)
     headers, _, _ = sheets._read_sheet_data()
+    if not managed:
+        if not headers or "Kết luận siêu âm" in headers:
+            return
+        exported = [d for d in definitions if d["export"]]
+        _, positions = sheets.fit_sheet_columns(headers, [d["label"] for d in exported], list(range(len(exported))))
+        definitions = [{**exported[index], "label": label, "aliases": [label]} for label, index in zip(headers, positions)]
+        definitions.append(next(d for d in exported if d["key"] == "sa_ket_luan"))
     expected = [d["label"] for d in definitions if d["export"]]
     if len(headers) == len(expected) and set(headers) == set(expected):
         return
-    sheets._send_webhook({"action": "schema", "schema_version": current.version, "columns": definitions}, expected_status="schema_updated")
+    sheets._send_webhook({"action": "schema", "schema_version": current.version, "columns": definitions,
+                         "preserve_column_order": not managed}, expected_status="schema_updated")
     actual, _, _ = sheets._read_sheet_data()
     if len(actual) != len(expected) or set(actual) != set(expected):
         raise RuntimeError("Cấu trúc cột Sheet khác biểu mẫu xuất dữ liệu.")

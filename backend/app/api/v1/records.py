@@ -28,10 +28,12 @@ def physician(user):
     return user.role in ("admin", "doctor")
 
 
-def accessible(db, key, user):
+def accessible(db, key, user, include_trash=False):
     sub = db.scalar(select(Submission).where(Submission.submission_uuid == key))
     if not sub or (not physician(user) and sub.owner_id != user.id):
         raise NotFoundException("Không tìm thấy phiếu hoặc bạn không có quyền truy cập.")
+    if sub.workflow_status == "trashed" and not (include_trash and physician(user)):
+        raise NotFoundException("Phiếu đang trong thùng rác. Khôi phục phiếu để sử dụng.")
     return sub
 
 
@@ -41,6 +43,7 @@ def present(db, sub, detail=True):
     clinical = (sub.answers or {}).get("clinical_data") or {}
     result = {name: getattr(sub, name) for name in ("id", "submission_uuid", "workflow_status", "revision", "created_at", "updated_at", "submitted_at", "approved_at", "review_note", "owner_id", "sync_status", "sync_error", "synced_revision", "identity_version", "study_code", "study_number")}
     result.update(reference_code=str(sub.submission_uuid).split("-")[0].upper(), form_version=sub.form_version.version,
+                  trashed_at=sub.trashed_at, trashed_from_state=sub.trashed_from_state,
                   owner_name=owner.username if owner else ("Nhập form trực tiếp" if sub.public_access_hash else "Phiếu cũ — chưa gán người nhập"),
                   reviewer_name=reviewer.username if reviewer else None,
                   so_hs=clinical.get("so_hs", ""), ho_ten=clinical.get("ho_ten", ""),
@@ -120,12 +123,18 @@ def list_records(q: str = Query("", max_length=200), state: str = "", owner_id: 
                  page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
                  db: Session = Depends(get_db), user: AdminUser = Depends(AuthService.get_current_user)):
     stmt = select(Submission)
+    if state == "trashed":
+        if not physician(user):
+            raise AppException(403, "FORBIDDEN", "Chỉ bác sĩ hoặc quản trị viên được xem thùng rác.")
+        stmt = stmt.where(Submission.workflow_status == "trashed")
+    else:
+        stmt = stmt.where(Submission.workflow_status != "trashed")
     if not physician(user):
         stmt = stmt.where(Submission.owner_id == user.id)
     elif owner_id is not None:
         stmt = stmt.where(Submission.owner_id == owner_id)
     if state:
-        if state not in STATES:
+        if state not in STATES | {"trashed"}:
             raise ValidationErrorException("Trạng thái không hợp lệ.")
         stmt = stmt.where(Submission.workflow_status == state)
     if date_from:
@@ -143,7 +152,59 @@ def list_records(q: str = Query("", max_length=200), state: str = "", owner_id: 
 
 @router.get("/{key}")
 def read_record(key: uuid.UUID, db: Session = Depends(get_db), user: AdminUser = Depends(AuthService.get_current_user)):
-    return present(db, accessible(db, key, user))
+    return present(db, accessible(db, key, user, include_trash=True))
+
+
+class TrashChange(BaseModel):
+    revision: int = Field(ge=1)
+
+
+@router.post("/{key}/trash")
+def trash_record(key: uuid.UUID, payload: TrashChange, db: Session = Depends(get_db),
+                 user: AdminUser = Depends(AuthService.get_current_admin)):
+    sub = accessible(db, key, user, include_trash=True)
+    if sub.workflow_status == "trashed" and payload.revision == sub.revision - 1:
+        return present(db, sub)
+    if payload.revision != sub.revision:
+        raise ConflictException("Phiếu đã thay đổi. Tải lại trước khi xóa.")
+    if sub.workflow_status == "trashed":
+        raise ConflictException("Phiếu đã nằm trong thùng rác.")
+    return write_change(db, sub, user, {
+        "trashed_from_state": sub.workflow_status,
+        "trashed_at": datetime.now(timezone.utc),
+        "workflow_status": "trashed",
+        "sync_status": "syncing" if sub.sync_status == "syncing" else "pending",
+        "sync_error": None,
+        "sync_attempts": 0,
+    }, "trash")
+
+
+@router.post("/{key}/restore")
+def restore_record(key: uuid.UUID, payload: TrashChange, db: Session = Depends(get_db),
+                   user: AdminUser = Depends(AuthService.get_current_admin)):
+    sub = accessible(db, key, user, include_trash=True)
+    if sub.workflow_status != "trashed":
+        if payload.revision == sub.revision - 1 and db.scalar(
+            select(SubmissionEvent.id).where(
+                SubmissionEvent.submission_id == sub.id,
+                SubmissionEvent.revision == sub.revision,
+                SubmissionEvent.action == "restore",
+            )
+        ):
+            return present(db, sub)
+        raise ConflictException("Phiếu không nằm trong thùng rác.")
+    if payload.revision != sub.revision:
+        raise ConflictException("Phiếu đã thay đổi. Tải lại trước khi khôi phục.")
+    if sub.trashed_from_state not in STATES:
+        raise ConflictException("Không xác định được trạng thái trước khi xóa. Cần kiểm tra phiếu.")
+    return write_change(db, sub, user, {
+        "workflow_status": sub.trashed_from_state,
+        "trashed_from_state": None,
+        "trashed_at": None,
+        "sync_status": "syncing" if sub.sync_status == "syncing" else "pending",
+        "sync_error": None,
+        "sync_attempts": 0,
+    }, "restore")
 
 
 @router.put("/{key}")
@@ -199,7 +260,7 @@ def transition(key: uuid.UUID, payload: Transition, db: Session = Depends(get_db
 
 @router.get("/{key}/history")
 def record_history(key: uuid.UUID, db: Session = Depends(get_db), user: AdminUser = Depends(AuthService.get_current_user)):
-    sub = accessible(db, key, user)
+    sub = accessible(db, key, user, include_trash=True)
     events = db.scalars(select(SubmissionEvent).where(SubmissionEvent.submission_id == sub.id).order_by(SubmissionEvent.id.desc())).all()
     return [{"id": e.id, "action": e.action, "revision": e.revision, "note": e.note, "created_at": e.created_at,
              "actor": db.get(AdminUser, e.actor_id).username if e.actor_id and db.get(AdminUser, e.actor_id) else "Người nhập trực tiếp / hệ thống",
@@ -208,10 +269,10 @@ def record_history(key: uuid.UUID, db: Session = Depends(get_db), user: AdminUse
 
 @router.post("/{key}/retry-sync")
 def retry_sync(key: uuid.UUID, db: Session = Depends(get_db), user: AdminUser = Depends(AuthService.get_current_admin)):
-    sub = accessible(db, key, user)
+    sub = accessible(db, key, user, include_trash=True)
     if sub.sync_status == "syncing":
         raise ConflictException("Đồng bộ đang chạy. Vui lòng chờ.")
-    if sub.workflow_status not in EXPORTABLE_STATES and sub.synced_revision is None and sub.sync_status not in ("failed", "pending"):
+    if sub.workflow_status not in (*EXPORTABLE_STATES, "trashed") and sub.synced_revision is None and sub.sync_status not in ("failed", "pending"):
         raise ConflictException("Chỉ phiếu đã gửi hoặc đang cần gỡ khỏi Sheet mới cần đồng bộ.")
     sub.sync_status, sub.sync_attempts, sub.sync_error = "pending", 0, None
     db.commit()

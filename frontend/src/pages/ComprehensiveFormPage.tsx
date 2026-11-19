@@ -180,6 +180,7 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
       sa_dich_o_bung: "",
       sa_ton_thuong_nmtc: "",
       sa_ton_thuong_nmtc_ghi_chu: "",
+      sa_ket_luan: "",
       iota_benign: "",
       iota_malignant: "",
       iota_borderline: "",
@@ -336,6 +337,7 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
     form.sa_tang_sinh_mach_mau,
     form.sa_dich_o_bung,
     form.sa_ton_thuong_nmtc,
+    form.sa_ket_luan,
     isIotaFilled,
   ].filter(isEntered).length;
   const countSec5 = [
@@ -368,13 +370,13 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
   const countSec7 = Number(Boolean(selectedPathologyId)) + Number(Boolean(secondPathologyId));
 
   const totalFilled = countSec1 + countSec2 + countSec3 + countSec4 + countSec5 + countSec6 + countSec7;
-  const progressPercent = Math.min(100, Math.round((totalFilled / 61) * 100));
+  const progressPercent = Math.min(100, Math.round((totalFilled / 62) * 100));
   const sectionNavigation: {key: keyof typeof sectionRefs; roman: string; label: string; short: string; filled: number; total: number}[] = [
     {key:"meta",roman:"#",label:"Mã phiếu",short:"Mã phiếu",filled:[form.hospital_code,form.study_phase].filter(isEntered).length,total:2},
     {key:"sec1",roman:"I",label:"Hành chính",short:"Hành chính",filled:countSec1,total:6},
     {key:"sec2",roman:"II",label:"Tiền sử & lâm sàng",short:"Lâm sàng",filled:countSec2,total:9},
     {key:"sec3",roman:"III",label:"Dấu ấn sinh học",short:"Markers",filled:countSec3,total:5},
-    {key:"sec4",roman:"IV",label:"Siêu âm",short:"Siêu âm",filled:countSec4,total:16},
+    {key:"sec4",roman:"IV",label:"Siêu âm",short:"Siêu âm",filled:countSec4,total:17},
     {key:"sec5",roman:"V",label:"Cộng hưởng từ",short:"MRI",filled:countSec5,total:16},
     {key:"sec6",roman:"VI",label:"Phẫu thuật",short:"Phẫu thuật",filled:countSec6,total:7},
     {key:"sec7",roman:"VII",label:"Giải phẫu bệnh WHO",short:"GPB WHO",filled:countSec7,total:2},
@@ -395,7 +397,7 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
           <div className="entry-header-copy"><span className="entry-kicker">THU THẬP DỮ LIỆU NGHIÊN CỨU</span><h1 className="form-title">Bệnh án & giải phẫu bệnh u buồng trứng</h1><p className="form-subtitle">Nhập thông tin theo hồ sơ nguồn. Các ô có dấu <b>*</b> cần điền trước khi gửi.</p></div>
           <button type="button" className="clear-form-button" aria-label="Xóa tất cả thông tin" onClick={handleClearAll} disabled={busy || readOnly}><Trash2 size={15} aria-hidden="true"/><span>Xóa tất cả thông tin</span></button>
         </div>
-        <div className="entry-progress"><div className="entry-progress-label"><span>Thông tin đã nhập</span><strong>{totalFilled}<span> / 61 mục</span></strong></div><div className="entry-progress-track" role="progressbar" aria-label="Tiến độ nhập thông tin" aria-valuemin={0} aria-valuemax={61} aria-valuenow={totalFilled}><span style={{width:`${progressPercent}%`}}/></div><p>Các mục chưa có thông tin có thể để trống.</p></div>
+        <div className="entry-progress"><div className="entry-progress-label"><span>Thông tin đã nhập</span><strong>{totalFilled}<span> / 62 mục</span></strong></div><div className="entry-progress-track" role="progressbar" aria-label="Tiến độ nhập thông tin" aria-valuemin={0} aria-valuemax={62} aria-valuenow={totalFilled}><span style={{width:`${progressPercent}%`}}/></div><p>Các mục chưa có thông tin có thể để trống.</p></div>
       </header>}
       <nav ref={navigationRef} className="sticky-nav-wrapper" aria-label="Các mục trong phiếu">
         {!compact && <div className="entry-nav-heading"><strong>Các mục trong phiếu</strong><button type="button" className="entry-collapse-toggle" aria-expanded={allSectionsOpen} onClick={() => setOpenSections(prev => ({...prev,...Object.fromEntries(sectionNavigation.filter(item => item.key !== "meta").map(item => [item.key,!allSectionsOpen]))}))}>{allSectionsOpen ? "Thu gọn tất cả" : "Mở tất cả"}<ChevronDown size={14} className={allSectionsOpen ? "" : "is-collapsed"}/></button></div>}
@@ -840,8 +842,8 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
             </div>
             <div className="section-header-right">
               <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
-              <span className={`section-count-badge ${countSec4 === 16 ? "is-complete" : ""}`}>
-                {countSec4}/16 câu
+              <span className={`section-count-badge ${countSec4 === 17 ? "is-complete" : ""}`}>
+                {countSec4}/17 câu
               </span>
             </div>
           </button>
@@ -1138,7 +1140,16 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
                   )}
                 </div>
 
-                {/* 37. IOTA ADNEX (Miễn tổng 6 mục đủ 100% là hợp lệ) */}
+                <div className="form-item form-col-span-full">
+                  <label className="field-label" htmlFor="entry-sa_ket_luan">Kết luận siêu âm</label>
+                  <textarea id="entry-sa_ket_luan" name="sa_ket_luan" className="form-input"
+                    disabled={readOnly || busy} rows={3} maxLength={4000}
+                    value={form.sa_ket_luan || ""}
+                    onChange={event => handleChange("sa_ket_luan", event.target.value)}
+                  />
+                </div>
+
+                {/* IOTA ADNEX */}
                 <div className="form-item form-col-span-full">
                   <div className="iota-panel">
                     <div className="iota-panel-header">

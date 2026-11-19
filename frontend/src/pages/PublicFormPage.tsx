@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ClinicalRecord, RecordAnswers, workflowApi } from "../api/workflow";
+import { ClinicalRecord, RecordAnswers, WorkflowApiError, workflowApi } from "../api/workflow";
 import { FormSchemaDefinition } from "../types/schema";
 import { ComprehensiveFormPage } from "./ComprehensiveFormPage";
 
@@ -21,7 +21,7 @@ export const PublicFormPage: React.FC = () => {
   const current = useRef<ClinicalRecord | null>(null);
   const latest = useRef<RecordAnswers | null>(null);
   const saved = useRef("");
-  const saving = useRef<Promise<ClinicalRecord> | null>(null);
+  const saving = useRef<Promise<ClinicalRecord | Receipt> | null>(null);
   const conflicted = useRef(false);
   const recoveryKey = () => `public-form-recovery:${entry.current?.uuid}`;
 
@@ -30,6 +30,7 @@ export const PublicFormPage: React.FC = () => {
     const setup = async () => {
       setError(""); setBusy(true);
       const form = await workflowApi<{version: number; schema_json: FormSchemaDefinition}>("/forms/current");
+      if (cancelled) return;
       let pending: Entry | null = null;
       try { pending = JSON.parse(sessionStorage.getItem(ENTRY_KEY) || "null"); } catch { /* Start a fresh entry. */ }
       if (!pending?.uuid || !pending?.key || !pending?.formVersion) {
@@ -46,7 +47,10 @@ export const PublicFormPage: React.FC = () => {
       let initial = restored.answers;
       try {
         const cache = JSON.parse(sessionStorage.getItem(recoveryKey()) || "null");
-        if (cache?.revision === restored.revision) initial = cache.answers;
+        const emptyDraft = restored.revision === 1 &&
+          !Object.keys(restored.answers.clinical_data || {}).length &&
+          !restored.answers.pathology.selected.length;
+        if (cache?.answers && (cache.revision === restored.revision || emptyDraft)) initial = cache.answers;
       } catch { /* The server draft remains the source of recovery. */ }
       latest.current = initial;
       setRecord(restored); setStartingAnswers(initial); setSchema(pinned);
@@ -61,16 +65,45 @@ export const PublicFormPage: React.FC = () => {
     setChanges(n => n+1);
     try { sessionStorage.setItem(recoveryKey(), JSON.stringify({revision:current.current?.revision, answers})); } catch { /* Optional tab recovery. */ }
   }, []);
-  const save = useCallback(async () => {
+  const save = useCallback(async (force = false): Promise<ClinicalRecord | Receipt> => {
+    while (saving.current) {
+      try { await saving.current; } catch { /* Retry the latest input after an earlier request failed. */ }
+    }
     if (conflicted.current) throw new Error("Bản nháp đã thay đổi ở phiên khác. Tải lại trang để đối chiếu trước khi nhập tiếp.");
-    while (saving.current) await saving.current;
     const active = entry.current, original = current.current, answers = latest.current;
     if (!active || !original || !answers) throw new Error("Chưa tải xong biểu mẫu.");
-    if (JSON.stringify(answers) === saved.current) return original;
-    const promise = workflowApi<ClinicalRecord>(`/public/records/${active.uuid}`, {method:"PUT", headers:{"X-Draft-Key":active.key}, body:JSON.stringify({revision:original.revision, answers})});
+    if (!force && JSON.stringify(answers) === saved.current) return original;
+    const persist = async (): Promise<ClinicalRecord | Receipt> => {
+      const put = (revision: number) => workflowApi<ClinicalRecord>(`/public/records/${active.uuid}`, {
+        method: "PUT", headers: {"X-Draft-Key": active.key}, body: JSON.stringify({revision, answers}),
+      });
+      try {
+        return await put(original.revision);
+      } catch (e) {
+        if (!(e instanceof WorkflowApiError) || e.status !== 404) throw e;
+        // Recreate a missing server draft with its original UUID and private key.
+        // The API rejects this if that UUID belongs to a different key or is in trash.
+        const restored = await workflowApi<ClinicalRecord | Receipt>("/public/records", {
+          method: "POST", headers: {"X-Draft-Key": active.key},
+          body: JSON.stringify({submission_uuid: active.uuid, form_version: active.formVersion}),
+        });
+        if (!("answers" in restored)) return restored;
+        if (restored.revision !== 1 && restored.revision !== original.revision) {
+          throw new Error("Bản nháp đã thay đổi ở phiên khác. Tải lại trang để đối chiếu trước khi nhập tiếp.");
+        }
+        return put(restored.revision);
+      }
+    };
+    const promise = persist();
     saving.current = promise;
     try {
       const updated = await promise;
+      if (entry.current?.uuid !== active.uuid) return updated;
+      if (!("answers" in updated)) {
+        setReceipt(updated); setDirty(false); setError("");
+        sessionStorage.removeItem(recoveryKey());
+        return updated;
+      }
       current.current = updated; setRecord(updated); saved.current = JSON.stringify(answers);
       const stillDirty = JSON.stringify(latest.current) !== saved.current;
       setDirty(stillDirty); setError("");
@@ -78,6 +111,9 @@ export const PublicFormPage: React.FC = () => {
       return updated;
     } catch (e) {
       if ((e as Error).message.includes("phiên khác")) conflicted.current = true;
+      if (e instanceof WorkflowApiError && e.status === 404) {
+        throw new Error("Bản nháp không thể truy cập bằng khóa của phiên nhập này. Nếu phiếu đã được xóa, hãy nhờ admin khôi phục trong Thùng rác. Nội dung đang nhập được giữ trong tab này.");
+      }
       throw e;
     } finally { if(saving.current === promise) saving.current = null; }
   }, []);
@@ -95,7 +131,8 @@ export const PublicFormPage: React.FC = () => {
   const submit = async (answers: RecordAnswers) => {
     latest.current = answers; setBusy(true); setError("");
     try {
-      const stored = await save();
+      const stored = await save(true);
+      if (!("answers" in stored)) return;
       const result = await workflowApi<Receipt>(`/public/records/${stored.submission_uuid}/submit`, {method:"POST",headers:{"X-Draft-Key":entry.current!.key},body:JSON.stringify({revision:stored.revision})});
       setReceipt(result); setDirty(false); sessionStorage.removeItem(recoveryKey()); window.scrollTo(0,0);
     } catch (e) {

@@ -25,6 +25,8 @@ def baseline_fields():
         multi = key in CONTRACT["multi_choices"]
         choices = CONTRACT["multi_choices"].get(key, CONTRACT["choices"].get(key, []))
         kind = "multiselect" if multi else "select" if choices else "number" if key in NUMBERS or key in ("nam_sinh", "nam_kham") else "text"
+        if key == "sa_ket_luan":
+            kind = "textarea"
         active = key not in CONTRACT.get("retired_fields", []) and key != "mri_dich_nang"
         field = ClinicalFieldSchema(id=key, label=label, type=kind, section=section, required=key == "so_hs", active=active,
                                     export=key in exported or key in ("mri_dich_nang_t1w", "mri_dich_nang_t2w"), choices=[str(c) for c in choices],

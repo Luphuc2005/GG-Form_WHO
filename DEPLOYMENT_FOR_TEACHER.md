@@ -31,7 +31,7 @@ nano .env
 bash scripts/deploy.sh
 ```
 
-Script build hai image, chờ PostgreSQL sẵn sàng, chạy Alembic đến `005_form_management`, nhập biểu mẫu ban đầu, tạo admin rồi kiểm tra frontend, backend, database và API biểu mẫu. Nginx phục vụ ứng dụng qua cổng đã khai báo. Cấu hình chứng chỉ và reverse proxy ở lớp HTTPS của máy chủ theo [hướng dẫn Nginx](DEPLOYMENT.md).
+Script build hai image, chờ PostgreSQL sẵn sàng, chạy Alembic đến `007_ultrasound_conclusion`, nhập biểu mẫu ban đầu, tạo admin rồi kiểm tra frontend, backend, database và API biểu mẫu. Migration `006_submission_trash` thêm thông tin thùng rác. Migration `007_ultrasound_conclusion` xuất bản phiên bản kế tiếp có ô kết luận siêu âm nếu máy chủ đang dùng biểu mẫu được quản lý bằng cấu hình và còn thiếu ô này. Phiếu cũ tiếp tục gắn với phiên bản trước. Nginx phục vụ ứng dụng qua cổng đã khai báo. Cấu hình chứng chỉ và reverse proxy ở lớp HTTPS của máy chủ theo [hướng dẫn Nginx](DEPLOYMENT.md).
 
 ## Nâng cấp máy chủ đang chạy
 

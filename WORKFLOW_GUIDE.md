@@ -21,6 +21,14 @@ Tài khoản **admin** có thêm **Quản lý biểu mẫu** tại `/admin/form-
 5. **Mở Google Sheet** ở đầu trang mở Sheet đang dùng trong tab mới; menu cạnh tài khoản có **Đồng bộ Google Sheets** để yêu cầu đồng bộ lại toàn bộ phiếu đã gửi. **Xuất Excel** tải file Excel (.xlsx) thật, giữ số 0 đầu của số hồ sơ và PARA. Menu cạnh tên tài khoản chứa **Tải CSV**, **Thống kê**, **Quản lý tài khoản** và **Đăng xuất**. Mọi phiếu đã gửi đều nằm trong dữ liệu xuất, kể cả phiếu cũ chưa từng duyệt; nháp và phiếu hủy không nằm trong đó.
 6. **Quản lý tài khoản** trong menu cạnh tên đăng nhập chỉ dùng nếu cần cấp thêm người quản trị/bác sĩ. Không phải cấp tài khoản cho sinh viên nhập form.
 
+## Thùng rác
+
+Admin và bác sĩ có thể bấm **Xóa** ở từng dòng trong danh sách, hoặc **Xóa phiếu** khi đang xem chi tiết. Hộp thoại hiển thị mã phiếu và người bệnh để xác nhận. Phiếu chuyển vào tab **Thùng rác**, được loại khỏi thống kê, Excel/CSV và xếp hàng gỡ khỏi Google Sheets.
+
+Mở tab **Thùng rác**, bấm **Khôi phục** và xác nhận để đưa phiếu về trạng thái trước khi xóa. Phiếu đã gửi được xếp hàng đồng bộ lại Sheet. Mã nghiên cứu, dữ liệu, người nhập và lịch sử được giữ trong database. Bộ định danh đợt vẫn được dành cho phiếu để bảo đảm khôi phục đúng hồ sơ. Phiếu đang trong thùng rác chỉ được xem bởi admin/bác sĩ và cần khôi phục trước khi sửa.
+
+Tính năng này cần migration `006_submission_trash`. Chạy quy trình nâng cấp trước khi khởi động backend mới.
+
 ## Lưu trữ, tránh trùng và đồng bộ
 
 - Database là nơi lưu chính. UUID cố định qua các lần lưu/thử gửi lại. Mã nghiên cứu gồm mã bệnh viện + R/P + số thứ tự 5 chữ số, tăng liên tục riêng theo từng bệnh viện/giai đoạn, không bắt đầu lại theo năm. Máy chủ cấp số trong cùng giao dịch gửi phiếu; gửi lại, sửa hoặc hủy không tái cấp/tái sử dụng số. Bệnh viện và giai đoạn được khóa sau khi có mã. Phiếu cũ giữ nguyên định danh và mã đợt hiện có.
@@ -43,3 +51,9 @@ cd E:\HocTap\GG-Form_WHO
 SQLite được sao lưu tại `backend/backups/` trước khi cập nhật schema. Dữ liệu và mật khẩu hiện có được giữ nguyên. Máy chủ PostgreSQL dùng sao lưu riêng rồi chạy `python -m alembic upgrade head`, cài dependencies mới và khởi động lại backend/frontend. Không dùng `init_local_db.py` để nâng cấp PostgreSQL.
 
 Các bài test dùng database và Sheet giả; không gửi dữ liệu thử lên Sheet bệnh viện. Việc đồng bộ thực tế còn phụ thuộc cấu hình webhook và quyền đọc Sheet hiện có.
+
+## Kết luận siêu âm và khôi phục phiên nhập
+
+Mục **Siêu âm** có ô **Kết luận siêu âm** dưới **Tổn thương NMTC**, trước **IOTA ADNEX**. Ô này nhận văn bản nhiều dòng, tối đa 4.000 ký tự, có thể để trống; nội dung được lưu và xuất Excel/CSV. Khi có kết luận được gửi lên Sheet cũ, hệ thống bổ sung cột tương ứng và giữ vị trí những cột đang có. Cập nhật Apps Script bằng mã mới trong `deploy/google_apps_script.js` để dùng tùy chọn giữ thứ tự cột này.
+
+Nếu bản nháp bị mất trên máy chủ, form thử tạo lại bằng cùng UUID và khóa riêng rồi lưu phần đang nhập. Khi tải lại cùng tab, nội dung dự phòng được dùng để khôi phục bản nháp mới tạo lại. Nếu UUID đang thuộc khóa khác hoặc phiếu nằm trong thùng rác, máy chủ từ chối tạo lại; thông báo hướng dẫn liên hệ admin và nội dung đang nhập vẫn được giữ trong tab.

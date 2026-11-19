@@ -983,6 +983,22 @@
   white-space: nowrap;
 }
 
+.admin-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-row-actions .admin-text-button {
+  white-space: nowrap;
+}
+
+.state-trashed {
+  background: #f1f5f9;
+  color: #475569;
+}
+
 .admin-table small {
   display: block;
   margin-top: 3px;

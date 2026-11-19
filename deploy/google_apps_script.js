@@ -42,7 +42,7 @@ function alignFormColumns(sheet, data) {
   }
   // Keep the human-readable research code at the beginning of the visible
   // table. The first physical column remains the hidden UUID for old webhooks.
-  if (byKey.study_code && byKey.study_code.export && keys.length) {
+  if (!data.preserve_column_order && byKey.study_code && byKey.study_code.export && keys.length) {
     var studyIndex = keys.indexOf("study_code");
     if (studyIndex === -1) {
       sheet.insertColumnAfter(1);

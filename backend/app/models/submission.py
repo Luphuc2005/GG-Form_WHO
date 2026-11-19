@@ -63,6 +63,8 @@ class Submission(Base):
     )
 
     form_version = relationship("FormVersion", back_populates="submissions")
+    trashed_from_state: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    trashed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True, index=True)
     public_access_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     identity_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)

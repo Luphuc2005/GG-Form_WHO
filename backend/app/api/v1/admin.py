@@ -235,7 +235,7 @@ def resync_google_sheets(
     else:
         warning = "Chưa cấu hình Sheet đích để đối chiếu. Phiếu trong hệ thống vẫn được giữ lại."
     result = db.execute(update(Submission).where(or_(
-        Submission.workflow_status.in_(EXPORTABLE_STATES),
+        Submission.workflow_status.in_((*EXPORTABLE_STATES, "trashed")),
         (Submission.synced_revision.is_not(None)) & (Submission.workflow_status.in_(("changes_requested", "cancelled"))),
     )).values(sync_status=case((Submission.sync_status == "syncing", "syncing"), else_="pending"), sync_error=None, sync_attempts=0))
     db.commit()

@@ -113,6 +113,52 @@ def test_cancelled_record_is_removed_but_database_row_remains(sync_env):
         assert sub is not None and sub.sync_status == "removed" and sub.synced_revision == 4
 
 
+def test_trash_then_restore_removes_and_republishes_the_same_uuid(sync_env):
+    factory, destination, key, _ = sync_env
+    assert worker.process_one()
+    original = list(destination.rows[0])
+    with factory() as db:
+        sub = db.get(Submission, key)
+        sub.trashed_from_state = sub.workflow_status
+        sub.workflow_status, sub.sync_status, sub.revision = "trashed", "pending", 4
+        db.commit()
+    assert worker.process_one()
+    assert destination.rows == []
+    with factory() as db:
+        sub = db.get(Submission, key)
+        assert sub.sync_status == "removed"
+        sub.workflow_status, sub.sync_status, sub.revision = sub.trashed_from_state, "pending", 5
+        sub.trashed_from_state = None
+        db.commit()
+    assert worker.process_one()
+    assert destination.rows == [original]
+    assert not worker.process_one()
+
+
+def test_trash_during_an_inflight_write_is_reconciled_on_the_next_job(sync_env, monkeypatch):
+    factory, destination, key, _ = sync_env
+    original_open = destination.open
+
+    def trash_after_append(request, timeout):
+        response = original_open(request, timeout)
+        payload = json.loads(request.data)
+        if "row" in payload:
+            with factory() as db:
+                sub = db.get(Submission, key)
+                sub.trashed_from_state = "submitted"
+                sub.workflow_status, sub.revision = "trashed", sub.revision + 1
+                db.commit()
+        return response
+
+    monkeypatch.setattr(sheets.urllib.request, "urlopen", trash_after_append)
+    assert worker.process_one()
+    with factory() as db:
+        sub = db.get(Submission, key)
+        assert sub.workflow_status == "trashed" and sub.sync_status == "pending"
+    assert worker.process_one()
+    assert destination.rows == []
+
+
 def test_edited_sent_revision_replaces_the_existing_row(sync_env):
     factory, destination, key, _ = sync_env
     worker.process_one()

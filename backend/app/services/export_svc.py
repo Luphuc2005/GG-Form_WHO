@@ -109,6 +109,7 @@ FORM_COLUMNS += [
     ("hospital_code", "Mã bệnh viện"), ("encounter_code", "Mã đợt điều trị"),
     ("study_phase", "Giai đoạn nghiên cứu"),
     ("hospital_cancer_center", "Bệnh viện trung tâm ung thư (1/0)"),
+    ("sa_ket_luan", "Kết luận siêu âm"),
 ]
 
 AUTO_CLASSIFICATION_MAP = {

@@ -99,3 +99,16 @@ assert.equal(opened, 0);
 assert.deepEqual(post({...auth, action: 'snapshot'}), {status: 'snapshot', rows: existingCode.rows});
 assert.equal(post({...auth, action: 'resync_all'}).status, 'error');
 console.log('Webhook checks passed: private readback, fixed spreadsheet ID, and rejected unauthenticated requests.');
+
+properties.clear();
+const legacyTrimmed = new Sheet(['Mã phiếu', 'Tên', 'Mã nghiên cứu'], ['synthetic-uuid', 'SYNTHETIC', 'YD_R_00001']);
+const legacyColumns = [
+  {key: 'submission_uuid', label: 'Mã phiếu', aliases: ['Mã phiếu'], export: true, hidden: true},
+  {key: 'custom_name', label: 'Tên', aliases: ['Tên'], export: true},
+  {key: 'study_code', label: 'Mã nghiên cứu', aliases: ['Mã nghiên cứu'], export: true},
+  {key: 'sa_ket_luan', label: 'Kết luận siêu âm', aliases: ['Kết luận siêu âm'], export: true},
+];
+context.alignFormColumns(legacyTrimmed, {schema_version: 1, columns: legacyColumns, preserve_column_order: true});
+assert.deepEqual(legacyTrimmed.rows[0], ['Mã phiếu', 'Tên', 'Mã nghiên cứu', 'Kết luận siêu âm']);
+assert.deepEqual(legacyTrimmed.rows[1], ['synthetic-uuid', 'SYNTHETIC', 'YD_R_00001']);
+console.log('Legacy Sheet conclusion check passed with original column positions.');

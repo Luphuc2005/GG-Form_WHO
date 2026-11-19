@@ -9,6 +9,8 @@
 - Một phiếu cho một đợt điều trị/phẫu thuật. Mã bệnh viện + số hồ sơ + mã đợt dùng để chống trùng; UUID giữ nguyên khi lưu và gửi lại.
 - Tự lưu nháp lên máy chủ trong phiên nhập hiện tại; **Gửi phiếu** ghi nhận dữ liệu ngay, không có bước chờ bác sĩ duyệt. Khóa riêng của bản nháp chỉ cho truy cập đúng phiếu đó; không mở danh sách bệnh án cho người nhập công khai.
 - Hủy phiếu có lý do, giữ dữ liệu và lịch sử; tìm kiếm toàn bộ database, lọc người nhập/trạng thái/ngày. Excel (.xlsx), CSV và Google Sheets nhận mọi phiếu đã gửi, không cần duyệt.
+- **Xóa** đưa phiếu vào **Thùng rác**; **Khôi phục** trả phiếu về trạng thái trước đó. Admin/bác sĩ thực hiện từ danh sách hoặc chi tiết. Phiếu trong thùng rác được loại khỏi thống kê, Excel/CSV và xếp hàng gỡ khỏi Google Sheets.
+- **Kết luận siêu âm** là ô nhập nhiều dòng dưới **Tổn thương NMTC**, trước **IOTA ADNEX**. Có thể để trống; nội dung được lưu và xuất cùng phiếu.
 - `/admin/reports`: thống kê, chi tiết phiếu, CSV và đối chiếu Google Sheets. Đồng bộ có trạng thái, hàng đợi bền vững và thử lại sau lỗi.
 - `/develop`: công cụ GPB cũ được giữ tương thích. Dùng `/admin/form-builder` để quản lý cả câu hỏi lâm sàng và GPB. Phiếu chưa có cấu hình lâm sàng theo phiên bản tiếp tục dùng giao diện cũ; các phiên bản do trình quản lý mới xuất bản dùng form sinh từ cấu hình.
 - Backend kiểm tra kiểu dữ liệu, danh mục, định danh đợt, tỷ lệ: theo quy ước nghiên cứu hiện tại, cả 6 ô IOTA nhập đủ và có tổng 100%; không tự cân số. Phiếu mới để trống toàn bộ kết quả chuyên môn.

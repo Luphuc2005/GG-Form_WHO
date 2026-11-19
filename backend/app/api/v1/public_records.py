@@ -28,7 +28,7 @@ def draft_hash(draft_key: str = Header(..., alias="X-Draft-Key", min_length=32, 
 
 def own_draft(db, key, digest):
     record = db.scalar(select(Submission).where(Submission.submission_uuid == key))
-    if not record or not record.public_access_hash or not hmac.compare_digest(record.public_access_hash, digest):
+    if not record or record.workflow_status == "trashed" or not record.public_access_hash or not hmac.compare_digest(record.public_access_hash, digest):
         raise NotFoundException("Không tìm thấy bản nháp trong phiên nhập này.")
     return record
 

@@ -47,6 +47,7 @@ class SubmissionRepository:
 
         by_workflow = dict(db.execute(
             select(Submission.workflow_status, func.count(Submission.id))
+            .where(Submission.workflow_status != "trashed")
             .group_by(Submission.workflow_status)
         ).all())
         # Sync progress describes sent records only, never drafts or cancellations.

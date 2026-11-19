@@ -9,6 +9,8 @@ from app.models.form_version import FormVersion
 from app.services import form_sheet_sync as jobs
 from app.services.form_configuration import FORM_KEY, effective_schema
 from app.services import google_sheets_svc as sheets
+from app.models.submission import Submission
+import uuid
 
 
 def test_schema_job_is_durable_without_any_patient_records_and_retries(monkeypatch):
@@ -59,3 +61,31 @@ def test_schema_update_requires_matching_headers_on_readback(db_session,monkeypa
 def test_numeric_display_normalization_for_new_and_renamed_questions():
     assert sheets.same_sheet_row(["Điểm mới"],["1.00"],["1"],{"Điểm mới"})
     assert not sheets.same_sheet_row(["Mã mới"],["0001"],["1"],set())
+
+
+def test_legacy_sheet_adds_only_ultrasound_conclusion_when_collected(db_session, monkeypatch):
+    form = db_session.query(FormVersion).first()
+    db_session.add(Submission(
+        submission_uuid=uuid.uuid4(), form_version_id=form.id, payload_hash="synthetic",
+        classification="unspecified", workflow_status="submitted",
+        answers={"clinical_data": {"sa_ket_luan": "Synthetic conclusion"}},
+    ))
+    db_session.commit()
+    headers = ["Mã phiếu", "Số HS", "Mã nghiên cứu", "PARA"]
+    monkeypatch.setattr(sheets, "_read_sheet_data", lambda: (headers, {}, []))
+    sent = []
+
+    def send(payload, expected_status):
+        assert expected_status == "schema_updated"
+        assert payload["preserve_column_order"]
+        sent.append(payload)
+        headers[:] = [column["label"] for column in payload["columns"] if column["export"]]
+
+    monkeypatch.setattr(sheets, "_send_webhook", send)
+    jobs.ensure_schema(db_session)
+    assert headers == ["Mã phiếu", "Số HS", "Mã nghiên cứu", "PARA", "Kết luận siêu âm"]
+    assert [column["key"] for column in sent[0]["columns"]] == [
+        "submission_uuid", "so_hs", "study_code", "para", "sa_ket_luan",
+    ]
+    jobs.ensure_schema(db_session)
+    assert len(sent) == 1

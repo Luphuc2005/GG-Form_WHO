@@ -27,7 +27,8 @@ export const CaseEditor: React.FC<Props> = ({ initial, userId, onExit, onRecordC
   const conflict = useRef(false);
   const [changeNumber, setChangeNumber] = useState(0);
   const editingSent = adminEdit && record.workflow_status !== "draft";
-  const editable = adminEdit && record.workflow_status !== "cancelled";
+  const locked = ["cancelled", "trashed"].includes(record.workflow_status);
+  const editable = adminEdit && !locked;
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
 
@@ -117,7 +118,7 @@ export const CaseEditor: React.FC<Props> = ({ initial, userId, onExit, onRecordC
     <div className="admin-record-bar">
       <div className="admin-record-heading"><button type="button" className="admin-back" aria-label="Quay lại danh sách phiếu" disabled={busy} onClick={() => { if (!dirty || window.confirm("Có thay đổi chưa lưu. Bạn muốn quay lại danh sách?")) onExit(); }}><ArrowLeft size={19}/></button><div><div className="admin-record-title"><h2>Phiếu {record.study_code || `#${record.reference_code}`}</h2><span className={`state-badge state-${record.workflow_status}`}>{STATE_LABELS[record.workflow_status]}</span>{editable && <span className="admin-edit-tag">Đang sửa</span>}</div><p>{record.ho_ten || "Chưa có họ tên"} · Số HS {record.so_hs || "chưa nhập"}</p></div></div>
       <div className="admin-record-actions">
-        {editable ? <><button className="admin-secondary" type="button" disabled={busy} onClick={() => {if(!dirty || window.confirm("Bỏ các thay đổi chưa lưu?")){sessionStorage.removeItem(cacheKey);onCancelEdit();}}}><X size={15}/>Đóng chỉnh sửa</button>{record.workflow_status === "draft" && <button className="admin-secondary" type="button" disabled={busy} onClick={() => submit(latest.current)}><Send size={15}/>Gửi phiếu</button>}<button className="admin-primary" type="button" onClick={saveNow} disabled={busy}><Save size={16}/>{busy ? "Đang lưu…" : editingSent ? "Lưu thay đổi" : "Lưu nháp"}</button></> : record.workflow_status !== "cancelled" && <button className="admin-primary" type="button" onClick={onEdit}><Pencil size={16}/>Sửa phiếu</button>}
+        {editable ? <><button className="admin-secondary" type="button" disabled={busy} onClick={() => {if(!dirty || window.confirm("Bỏ các thay đổi chưa lưu?")){sessionStorage.removeItem(cacheKey);onCancelEdit();}}}><X size={15}/>Đóng chỉnh sửa</button>{record.workflow_status === "draft" && <button className="admin-secondary" type="button" disabled={busy} onClick={() => submit(latest.current)}><Send size={15}/>Gửi phiếu</button>}<button className="admin-primary" type="button" onClick={saveNow} disabled={busy}><Save size={16}/>{busy ? "Đang lưu…" : editingSent ? "Lưu thay đổi" : "Lưu nháp"}</button></> : !locked && <button className="admin-primary" type="button" onClick={onEdit}><Pencil size={16}/>Sửa phiếu</button>}
         {extraActions}
       </div>
     </div>

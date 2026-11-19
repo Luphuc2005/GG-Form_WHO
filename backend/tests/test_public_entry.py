@@ -122,3 +122,18 @@ def test_public_form_checks_six_field_total_without_modifying_values(client, db_
     assert response.status_code == expected
     stored = db_session.get(Submission, row["id"])
     assert tuple(stored.answers["clinical_data"][key] for key in IOTA) == percentages
+
+
+def test_ultrasound_conclusion_survives_submission_and_excel_export(client):
+    conclusion = "Kết luận siêu âm thử nghiệm\nDòng thứ hai"
+    row, headers = begin(client)
+    row = save(client, row, headers, answers(sa_ket_luan=conclusion))
+    assert send(client, row, headers).status_code == 200
+    doctor = {"Authorization": "Bearer " + create_access_token({"sub": "admin"})}
+    detail = client.get(f"/api/v1/records/{row['submission_uuid']}", headers=doctor).json()
+    assert detail["answers"]["clinical_data"]["sa_ket_luan"] == conclusion
+    assert "Kết luận siêu âm" in client.get("/api/v1/admin/export.csv", headers=doctor).text
+    workbook = load_workbook(io.BytesIO(client.get("/api/v1/admin/export.xlsx", headers=doctor).content))
+    sheet = workbook.active
+    labels = [cell.value for cell in sheet[1]]
+    assert sheet.cell(2, labels.index("Kết luận siêu âm") + 1).value == conclusion
