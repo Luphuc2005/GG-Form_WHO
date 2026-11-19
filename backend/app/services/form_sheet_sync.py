@@ -6,7 +6,12 @@ from app.models.form_management import FormSheetJob
 from app.repositories.form_repo import FormRepository
 from app.services.form_configuration import FORM_KEY, export_definitions
 from app.services.clinical_validation import SURGERY_FIELDS
+from app.services.biomarker_units import BIOMARKER_UNIT_FIELDS
 from app.services import google_sheets_svc as sheets
+
+# New metadata is appended as a group; an old numeric column is never renamed
+# to imply a unit that was not collected on the original record.
+LEGACY_COLUMN_GROUPS = (("sa_ket_luan",), SURGERY_FIELDS, BIOMARKER_UNIT_FIELDS)
 
 
 def ensure_schema(db):
@@ -15,7 +20,7 @@ def ensure_schema(db):
     if not managed:
         # Append collected additions while preserving a hospital's trimmed layout.
         # The surgical protocol adds its switches and descriptions together.
-        for group in (("sa_ket_luan",), SURGERY_FIELDS):
+        for group in LEGACY_COLUMN_GROUPS:
             values = [Submission.answers["clinical_data"][key].as_string() for key in group]
             collected = db.scalar(select(Submission.id).where(
                 Submission.workflow_status.in_(EXPORTABLE_STATES),
