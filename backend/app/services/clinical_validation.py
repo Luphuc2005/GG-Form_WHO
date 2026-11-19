@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 from app.core.exceptions import ValidationErrorException
+from app.services.biomarker_units import validate_biomarker_units
 
 CONTRACT = json.loads(Path(__file__).with_name("clinical_contract.json").read_text(encoding="utf-8"))
 
@@ -31,6 +32,7 @@ def validate_clinical(data: dict, final: bool = False, study_identity: bool = Fa
     multi_fields = set(contract["multi_choices"])
     errors = []
     previous_data = previous_data or {}
+    errors.extend(validate_biomarker_units(data, contract, previous_data, final=final, schema=schema))
     missing = data.get("missing_reasons", {})
     if not isinstance(missing, dict) or any(not isinstance(v, str) or v not in MISSING for v in missing.values()):
         raise ValidationErrorException("Lý do thiếu dữ liệu không hợp lệ.")
