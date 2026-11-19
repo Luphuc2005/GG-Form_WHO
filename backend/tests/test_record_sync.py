@@ -130,6 +130,38 @@ def test_surgical_protocol_extends_legacy_sheet_and_verifies_all_new_values(sync
     assert destination.posts == writes and len(destination.rows) == 2
 
 
+def test_original_biomarker_units_append_without_relabeling_historical_numbers(sync_env):
+    from app.services.biomarker_units import BIOMARKER_UNIT_FIELDS
+    from app.services.clinical_validation import CONTRACT
+
+    factory, destination, key, _ = sync_env
+    new_labels = {CONTRACT["fields"][field] for field in BIOMARKER_UNIT_FIELDS}
+    destination.headers = [label for label in destination.headers if label not in new_labels]
+    original_headers = destination.headers[:]
+    unrelated = [""] * len(original_headers)
+    unrelated[0] = str(uuid.uuid4())
+    unrelated[original_headers.index("AFP")] = "123.000"
+    destination.rows = [unrelated[:]]
+    values = {"afp": "12.500", "afp_unit": "IU/mL", "he4": "21.5", "he4_unit": "Khác", "he4_unit_other": "Synthetic original unit"}
+    with factory() as db:
+        record = db.get(Submission, key)
+        record.answers = {"clinical_data": {"so_hs": "SYNTHETIC", **values}}
+        db.commit()
+    assert worker.process_one()
+    assert destination.headers[:len(original_headers)] == original_headers
+    assert destination.headers[len(original_headers):] == [CONTRACT["fields"][field] for field in BIOMARKER_UNIT_FIELDS]
+    assert destination.rows[0][:len(unrelated)] == unrelated
+    assert all(destination.rows[0][destination.headers.index(label)] == "" for label in new_labels)
+    with factory() as db:
+        record = db.get(Submission, key)
+        assert record.sync_status == "synced"
+        row = next(row for row in destination.rows if row[0] == str(record.submission_uuid))
+        for field, value in values.items():
+            assert row[destination.headers.index(CONTRACT["fields"][field])] == value
+    writes = destination.posts
+    assert not worker.process_one() and destination.posts == writes
+
+
 def test_cancelled_record_is_removed_but_database_row_remains(sync_env):
     factory, destination, key, _ = sync_env
     worker.process_one()
