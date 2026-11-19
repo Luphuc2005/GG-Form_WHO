@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, FileText, Send } from "lucide-react";
 import type { ComprehensiveFormPageProps } from "./ComprehensiveFormPage";
 import { ClinicalField } from "../types/schema";
+import { SURGICAL_FINDINGS } from "../components/SurgicalProtocolFields";
 import { RecordAnswers, workflowApi } from "../api/workflow";
 import "../styles/form-builder.css";
 import {
@@ -121,6 +122,9 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     setError("");
     setForm((previous) => {
       const next = { ...previous, [id]: value };
+      if (SURGICAL_FINDINGS.some(finding => finding.id === id) && value !== "Có") {
+        next[`${id}_ghi_chu`] = "";
+      }
       if (filled(value) && next.missing_reasons) {
         next.missing_reasons = { ...next.missing_reasons };
         delete next.missing_reasons[id];

@@ -110,6 +110,13 @@ FORM_COLUMNS += [
     ("study_phase", "Giai đoạn nghiên cứu"),
     ("hospital_cancer_center", "Bệnh viện trung tâm ung thư (1/0)"),
     ("sa_ket_luan", "Kết luận siêu âm"),
+    ("pt_so_luong_u", "Số lượng u (Phẫu thuật)"),
+    ("pt_co_dich_o_bung", "Dịch ổ bụng (Phẫu thuật)"),
+    ("pt_co_dich_o_bung_ghi_chu", "Mô tả dịch ổ bụng (Phẫu thuật)"),
+    ("pt_u_dinh_co_quan_khac", "U dính với cơ quan khác (Phẫu thuật)"),
+    ("pt_u_dinh_co_quan_khac_ghi_chu", "Mô tả u dính với cơ quan khác (Phẫu thuật)"),
+    ("pt_nghi_ngo_di_can", "Tổn thương nghi ngờ di căn (Phẫu thuật)"),
+    ("pt_nghi_ngo_di_can_ghi_chu", "Mô tả tổn thương nghi ngờ di căn (Phẫu thuật)"),
 ]
 
 AUTO_CLASSIFICATION_MAP = {

@@ -15,6 +15,12 @@ NUMBERS = {
     "iota_benign", "iota_malignant", "iota_borderline", "iota_stage1", "iota_stage2_4", "iota_metastatic", "sa_iota_adnex",
 }
 IOTA = ("iota_benign", "iota_malignant", "iota_borderline", "iota_stage1", "iota_stage2_4", "iota_metastatic")
+SURGERY_DETAILS = {
+    "pt_co_dich_o_bung": "pt_co_dich_o_bung_ghi_chu",
+    "pt_u_dinh_co_quan_khac": "pt_u_dinh_co_quan_khac_ghi_chu",
+    "pt_nghi_ngo_di_can": "pt_nghi_ngo_di_can_ghi_chu",
+}
+SURGERY_FIELDS = ("pt_so_luong_u", *(key for pair in SURGERY_DETAILS.items() for key in pair))
 
 
 def validate_clinical(data: dict, final: bool = False, study_identity: bool = False, previous_data: dict | None = None, schema=None):
@@ -53,6 +59,11 @@ def validate_clinical(data: dict, final: bool = False, study_identity: bool = Fa
             errors.append(f"{key}: cần danh sách lựa chọn")
         elif isinstance(data.get(key), list) and any(v not in contract["multi_choices"][key] for v in data[key]):
             errors.append(f"{key}: lựa chọn không có trong danh mục")
+    for parent, detail in SURGERY_DETAILS.items():
+        if data.get(detail) and data.get(parent) != "Có" and (
+            data.get(detail) != previous_data.get(detail) or data.get(parent) != previous_data.get(parent)
+        ):
+            errors.append(f"{detail}: chỉ nhập mô tả khi chọn Có")
     values = {}
     for key in NUMBERS | {"nam_sinh", "nam_kham"}:
         value = data.get(key)

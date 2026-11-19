@@ -1,34 +1,40 @@
 """Durable schema synchronization, independent of whether any records exist."""
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import update, select
+from sqlalchemy import update, select, or_
 from app.models.submission import Submission, EXPORTABLE_STATES
 from app.models.form_management import FormSheetJob
 from app.repositories.form_repo import FormRepository
 from app.services.form_configuration import FORM_KEY, export_definitions
+from app.services.clinical_validation import SURGERY_FIELDS
 from app.services import google_sheets_svc as sheets
 
 
 def ensure_schema(db):
     definitions, managed = export_definitions(db)
+    additions = []
     if not managed:
-        # Add this newly collected field to a legacy trimmed Sheet when it is used.
-        # Preserve all existing headers and their column positions.
-        has_conclusion = db.scalar(select(Submission.id).where(
-            Submission.workflow_status.in_(EXPORTABLE_STATES),
-            Submission.answers["clinical_data"]["sa_ket_luan"].as_string().is_not(None),
-            Submission.answers["clinical_data"]["sa_ket_luan"].as_string() != "",
-        ).limit(1))
-        if has_conclusion is None:
+        # Append collected additions while preserving a hospital's trimmed layout.
+        # The surgical protocol adds its switches and descriptions together.
+        for group in (("sa_ket_luan",), SURGERY_FIELDS):
+            values = [Submission.answers["clinical_data"][key].as_string() for key in group]
+            collected = db.scalar(select(Submission.id).where(
+                Submission.workflow_status.in_(EXPORTABLE_STATES),
+                or_(*[value.is_not(None) & (value != "") for value in values]),
+            ).limit(1))
+            if collected is not None:
+                additions.extend(group)
+        if not additions:
             return
     current = FormRepository.get_published_by_key(db, FORM_KEY)
     headers, _, _ = sheets._read_sheet_data()
     if not managed:
-        if not headers or "Kết luận siêu âm" in headers:
+        missing = [d for d in definitions if d["key"] in additions and d["export"] and d["label"] not in headers]
+        if not headers or not missing:
             return
         exported = [d for d in definitions if d["export"]]
         _, positions = sheets.fit_sheet_columns(headers, [d["label"] for d in exported], list(range(len(exported))))
         definitions = [{**exported[index], "label": label, "aliases": [label]} for label, index in zip(headers, positions)]
-        definitions.append(next(d for d in exported if d["key"] == "sa_ket_luan"))
+        definitions.extend(missing)
     expected = [d["label"] for d in definitions if d["export"]]
     if len(headers) == len(expected) and set(headers) == set(expected):
         return

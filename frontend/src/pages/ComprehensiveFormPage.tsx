@@ -10,6 +10,7 @@ import {
 import { FormSchemaDefinition } from "../types/schema";
 import { RecordAnswers, workflowApi } from "../api/workflow";
 import { ManagedFormPage } from "./ManagedFormPage";
+import { SurgicalProtocolFields, SURGICAL_FINDINGS } from "../components/SurgicalProtocolFields";
 import { WhoResultsFields, whoValueAt, buildWhoPathology } from "../components/WhoResultsFields";
 
 export interface ComprehensiveFormPageProps {
@@ -211,6 +212,13 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
       pt_sinh_thiet_lanh: "",
       pt_sinh_thiet_lanh_ghi_chu: "",
       pt_ton_thuong: "",
+      pt_so_luong_u: "",
+      pt_co_dich_o_bung: "",
+      pt_co_dich_o_bung_ghi_chu: "",
+      pt_u_dinh_co_quan_khac: "",
+      pt_u_dinh_co_quan_khac_ghi_chu: "",
+      pt_nghi_ngo_di_can: "",
+      pt_nghi_ngo_di_can_ghi_chu: "",
       hospital_code: "", study_phase: "", encounter_code: "", treatment_date: "", missing_reasons: {},
       ...initialAnswers.clinical_data,
       // Preserve historical string values from older records while editing arrays.
@@ -235,6 +243,9 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
   const handleChange = (field: string, value: any) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
+      if (SURGICAL_FINDINGS.some(finding => finding.id === field) && value !== "Có") {
+        next[`${field}_ghi_chu`] = "";
+      }
 
       if (value !== "" && value !== undefined) {
         next.missing_reasons = { ...(prev.missing_reasons || {}) };
@@ -364,13 +375,17 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
     (Array.isArray(form.pt_phuong_phap) ? form.pt_phuong_phap.length > 0 : Boolean(form.pt_phuong_phap)),
     form.pt_sinh_thiet_lanh,
     form.pt_ton_thuong,
+    form.pt_so_luong_u,
+    form.pt_co_dich_o_bung,
+    form.pt_u_dinh_co_quan_khac,
+    form.pt_nghi_ngo_di_can,
     form.ubt_xoan,
     form.ubt_vo,
   ].filter(isEntered).length;
   const countSec7 = Number(Boolean(selectedPathologyId)) + Number(Boolean(secondPathologyId));
 
   const totalFilled = countSec1 + countSec2 + countSec3 + countSec4 + countSec5 + countSec6 + countSec7;
-  const progressPercent = Math.min(100, Math.round((totalFilled / 62) * 100));
+  const progressPercent = Math.min(100, Math.round((totalFilled / 66) * 100));
   const sectionNavigation: {key: keyof typeof sectionRefs; roman: string; label: string; short: string; filled: number; total: number}[] = [
     {key:"meta",roman:"#",label:"Mã phiếu",short:"Mã phiếu",filled:[form.hospital_code,form.study_phase].filter(isEntered).length,total:2},
     {key:"sec1",roman:"I",label:"Hành chính",short:"Hành chính",filled:countSec1,total:6},
@@ -378,7 +393,7 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
     {key:"sec3",roman:"III",label:"Dấu ấn sinh học",short:"Markers",filled:countSec3,total:5},
     {key:"sec4",roman:"IV",label:"Siêu âm",short:"Siêu âm",filled:countSec4,total:17},
     {key:"sec5",roman:"V",label:"Cộng hưởng từ",short:"MRI",filled:countSec5,total:16},
-    {key:"sec6",roman:"VI",label:"Phẫu thuật",short:"Phẫu thuật",filled:countSec6,total:7},
+    {key:"sec6",roman:"VI",label:"Phẫu thuật",short:"Phẫu thuật",filled:countSec6,total:11},
     {key:"sec7",roman:"VII",label:"Giải phẫu bệnh WHO",short:"GPB WHO",filled:countSec7,total:2},
   ];
   const allSectionsOpen = sectionNavigation.filter(item => item.key !== "meta").every(item => openSections[item.key]);
@@ -397,7 +412,7 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
           <div className="entry-header-copy"><span className="entry-kicker">THU THẬP DỮ LIỆU NGHIÊN CỨU</span><h1 className="form-title">Bệnh án & giải phẫu bệnh u buồng trứng</h1><p className="form-subtitle">Nhập thông tin theo hồ sơ nguồn. Các ô có dấu <b>*</b> cần điền trước khi gửi.</p></div>
           <button type="button" className="clear-form-button" aria-label="Xóa tất cả thông tin" onClick={handleClearAll} disabled={busy || readOnly}><Trash2 size={15} aria-hidden="true"/><span>Xóa tất cả thông tin</span></button>
         </div>
-        <div className="entry-progress"><div className="entry-progress-label"><span>Thông tin đã nhập</span><strong>{totalFilled}<span> / 62 mục</span></strong></div><div className="entry-progress-track" role="progressbar" aria-label="Tiến độ nhập thông tin" aria-valuemin={0} aria-valuemax={62} aria-valuenow={totalFilled}><span style={{width:`${progressPercent}%`}}/></div><p>Các mục chưa có thông tin có thể để trống.</p></div>
+        <div className="entry-progress"><div className="entry-progress-label"><span>Thông tin đã nhập</span><strong>{totalFilled}<span> / 66 mục</span></strong></div><div className="entry-progress-track" role="progressbar" aria-label="Tiến độ nhập thông tin" aria-valuemin={0} aria-valuemax={66} aria-valuenow={totalFilled}><span style={{width:`${progressPercent}%`}}/></div><p>Các mục chưa có thông tin có thể để trống.</p></div>
       </header>}
       <nav ref={navigationRef} className="sticky-nav-wrapper" aria-label="Các mục trong phiếu">
         {!compact && <div className="entry-nav-heading"><strong>Các mục trong phiếu</strong><button type="button" className="entry-collapse-toggle" aria-expanded={allSectionsOpen} onClick={() => setOpenSections(prev => ({...prev,...Object.fromEntries(sectionNavigation.filter(item => item.key !== "meta").map(item => [item.key,!allSectionsOpen]))}))}>{allSectionsOpen ? "Thu gọn tất cả" : "Mở tất cả"}<ChevronDown size={14} className={allSectionsOpen ? "" : "is-collapsed"}/></button></div>}
@@ -1629,8 +1644,8 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
             </div>
             <div className="section-header-right">
               <ChevronDown className="entry-section-chevron" size={19} aria-hidden="true"/>
-              <span className={`section-count-badge ${countSec6 === 7 ? "is-complete" : ""}`}>
-                {countSec6}/7 mục
+              <span className={`section-count-badge ${countSec6 === 11 ? "is-complete" : ""}`}>
+                {countSec6}/11 mục
               </span>
             </div>
           </button>
@@ -1741,7 +1756,10 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
                   />
                 </div>
 
-                {/* 6. UBT xoắn */}
+                <SurgicalProtocolFields values={form} disabled={readOnly || busy}
+                  onChange={handleChange} choiceOptions={choiceOptions}/>
+
+                {/* 10. UBT xoắn */}
                 <div className="form-item">
                   <label className="field-label" htmlFor="entry-ubt_xoan">UBT xoắn</label>
                   <select id="entry-ubt_xoan" disabled={readOnly || busy} aria-label="UBT xoắn" name="ubt_xoan"
@@ -1755,7 +1773,7 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
                   </select>
                 </div>
 
-                {/* 7. UBT vỡ */}
+                {/* 11. UBT vỡ */}
                 <div className="form-item">
                   <label className="field-label" htmlFor="entry-ubt_vo">UBT vỡ</label>
                   <select id="entry-ubt_vo" disabled={readOnly || busy} aria-label="UBT vỡ" name="ubt_vo"
