@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 5,
   "fields": {
     "so_hs": "Số HS",
     "ho_ten": "Họ Tên",
@@ -21,20 +21,10 @@
     "ubt_vo": "UBT vỡ",
     "ubt_nhiem_trung": "UBT nhiễm trùng",
     "ca_125": "CA 125",
-    "ca_125_unit": "Đơn vị CA 125",
-    "ca_125_unit_other": "Đơn vị khác của CA 125",
     "he4": "HE4",
-    "he4_unit": "Đơn vị HE4",
-    "he4_unit_other": "Đơn vị khác của HE4",
     "roma": "ROMA",
-    "roma_unit": "Đơn vị/dạng kết quả ROMA",
-    "roma_unit_other": "Đơn vị/dạng kết quả khác của ROMA",
     "afp": "AFP",
-    "afp_unit": "Đơn vị AFP",
-    "afp_unit_other": "Đơn vị khác của AFP",
     "beta_hcg": "beta hCG",
-    "beta_hcg_unit": "Đơn vị beta hCG",
-    "beta_hcg_unit_other": "Đơn vị khác của beta hCG",
     "sa_so_luong_u": "Số lượng u (Siêu âm)",
     "sa_mo_buong_trung": "Mô buồng trứng (Siêu âm)",
     "sa_phan_loai_u": "Phân loại u (Siêu âm)",
@@ -99,11 +89,6 @@
     "treatment_date": "Ngày điều trị/phẫu thuật"
   },
   "choices": {
-    "ca_125_unit": ["U/mL", "kU/L", "Khác", "Chưa xác nhận"],
-    "he4_unit": ["pmol/L", "Khác", "Chưa xác nhận"],
-    "roma_unit": ["%", "Chỉ số", "Khác", "Chưa xác nhận"],
-    "afp_unit": ["IU/mL", "ng/mL", "Khác", "Chưa xác nhận"],
-    "beta_hcg_unit": ["mIU/mL", "IU/L", "Khác", "Chưa xác nhận"],
     "hospital_cancer_center": [
       0,
       1
@@ -355,13 +340,6 @@
       "cắt tử cung",
       "cắt mạc nối lớn và phân giai đoạn"
     ]
-  },
-  "biomarkers": {
-    "ca_125": {"unit_field": "ca_125_unit", "other_unit_field": "ca_125_unit_other"},
-    "he4": {"unit_field": "he4_unit", "other_unit_field": "he4_unit_other"},
-    "roma": {"unit_field": "roma_unit", "other_unit_field": "roma_unit_other"},
-    "afp": {"unit_field": "afp_unit", "other_unit_field": "afp_unit_other"},
-    "beta_hcg": {"unit_field": "beta_hcg_unit", "other_unit_field": "beta_hcg_unit_other"}
   },
   "legacy_choices": {
     "sa_so_luong_u": [

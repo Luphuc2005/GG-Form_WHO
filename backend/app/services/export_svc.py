@@ -117,17 +117,6 @@ FORM_COLUMNS += [
     ("pt_u_dinh_co_quan_khac_ghi_chu", "Mô tả u dính với cơ quan khác (Phẫu thuật)"),
     ("pt_nghi_ngo_di_can", "Tổn thương nghi ngờ di căn (Phẫu thuật)"),
     ("pt_nghi_ngo_di_can_ghi_chu", "Mô tả tổn thương nghi ngờ di căn (Phẫu thuật)"),
-    # Append metadata so existing numeric values and column positions stay intact.
-    ("ca_125_unit", "Đơn vị CA 125"),
-    ("ca_125_unit_other", "Đơn vị khác của CA 125"),
-    ("he4_unit", "Đơn vị HE4"),
-    ("he4_unit_other", "Đơn vị khác của HE4"),
-    ("roma_unit", "Đơn vị/dạng kết quả ROMA"),
-    ("roma_unit_other", "Đơn vị/dạng kết quả khác của ROMA"),
-    ("afp_unit", "Đơn vị AFP"),
-    ("afp_unit_other", "Đơn vị khác của AFP"),
-    ("beta_hcg_unit", "Đơn vị beta hCG"),
-    ("beta_hcg_unit_other", "Đơn vị khác của beta hCG"),
 ]
 
 AUTO_CLASSIFICATION_MAP = {

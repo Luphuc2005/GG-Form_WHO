@@ -29,7 +29,6 @@ import {
 } from "../types/schema";
 import { workflowApi } from "../api/workflow";
 import { ManagedFormPage, SECTION_NAMES } from "./ManagedFormPage";
-import { BIOMARKER_KEYS, unitMetadataKey } from "../types/biomarkers";
 import "../styles/admin.css";
 import "../styles/form-builder.css";
 
@@ -284,17 +283,12 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
     state.schema.clinical_fields?.some((f) => f.id === field?.id),
   );
   const isSoHs = field?.id === "so_hs";
-  const isBiomarkerMetadata = Boolean(field && unitMetadataKey(field.id));
-  const biomarker = BIOMARKER_KEYS.find(marker => field?.id === marker || field?.id === `${marker}_unit` || field?.id === `${marker}_unit_other`);
 
   const update = (patch: Partial<ClinicalField>) =>
     setSchema({
       ...schema,
       clinical_fields: fields.map((f) =>
-        f.id === selected ? { ...f, ...patch } : biomarker === selected && [ `${biomarker}_unit`, `${biomarker}_unit_other` ].includes(f.id)
-          ? { ...f, ...(patch.section !== undefined ? {section:patch.section} : {}),
-              ...(patch.active !== undefined ? {active:patch.active} : {}), ...(patch.export !== undefined ? {export:patch.export} : {}) }
-          : f,
+        f.id === selected ? { ...f, ...patch } : f,
       ),
     });
 
@@ -794,11 +788,6 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                   </div>
 
                   {/* Block 1: Basic Info */}
-                  {biomarker && <div className="builder-condition-pill"><Info size={14}/><span>
-                    Kết quả và đơn vị được lưu riêng theo phiếu gốc, không tự quy đổi.
-                    {isBiomarkerMetadata ? " Nhóm, hiển thị và xuất dữ liệu đi cùng chỉ số. Chỉ yêu cầu đơn vị khi có kết quả." : " Thay đổi nhóm, hiển thị hoặc xuất dữ liệu ở đây sẽ áp dụng cho cả các ô đơn vị đi kèm."}
-                    {field.id === `${biomarker}_unit` && " Có thể thêm đơn vị mới vào danh sách; giữ Khác và Chưa xác nhận."}
-                  </span></div>}
                   <div className="builder-editor-block">
                     <h3 className="builder-block-title">
                       1. Nội dung hiển thị
@@ -818,7 +807,6 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                         Nhóm câu hỏi
                         <select
                           value={field.section}
-                          disabled={isBiomarkerMetadata}
                           onChange={(e) =>
                             update({
                               section: e.target
@@ -1044,7 +1032,7 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                       >
                         <input
                           type="checkbox"
-                          disabled={isSoHs || isBiomarkerMetadata}
+                          disabled={isSoHs}
                           checked={field.active}
                           onChange={(e) => update({ active: e.target.checked })}
                         />
@@ -1062,7 +1050,7 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                       >
                         <input
                           type="checkbox"
-                          disabled={isSoHs || isBiomarkerMetadata}
+                          disabled={isSoHs}
                           checked={field.required}
                           onChange={(e) =>
                             update({ required: e.target.checked })
@@ -1082,7 +1070,7 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                       >
                         <input
                           type="checkbox"
-                          disabled={isSoHs || isBiomarkerMetadata}
+                          disabled={isSoHs}
                           checked={field.export}
                           onChange={(e) => update({ export: e.target.checked })}
                         />

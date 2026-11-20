@@ -11,8 +11,6 @@ import { FormSchemaDefinition } from "../types/schema";
 import { RecordAnswers, workflowApi } from "../api/workflow";
 import { ManagedFormPage } from "./ManagedFormPage";
 import { SurgicalProtocolFields, SURGICAL_FINDINGS } from "../components/SurgicalProtocolFields";
-import { BiomarkerInput } from "../components/BiomarkerInput";
-import { BIOMARKER_KEYS, BIOMARKER_LABELS, BiomarkerDefinitions, biomarkerWithUnit } from "../types/biomarkers";
 import { WhoResultsFields, whoValueAt, buildWhoPathology } from "../components/WhoResultsFields";
 
 export interface ComprehensiveFormPageProps {
@@ -40,12 +38,11 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
   const [formError, setFormError] = useState("");
   const [catalogError, setCatalogError] = useState("");
   const [clinicalChoices, setClinicalChoices] = useState<Record<string, (string | number)[]>>({});
-  const [biomarkers, setBiomarkers] = useState<BiomarkerDefinitions>({});
   const hasSurgeryProtocol = Boolean(clinicalChoices.pt_so_luong_u?.length);
   const surgeryFieldTotal = hasSurgeryProtocol ? 11 : 7;
   const totalFieldCount = hasSurgeryProtocol ? 66 : 62;
   const [identityOptions, setIdentityOptions] = useState<{hospitals: Record<string,string>; phases: Record<string,string>}>({hospitals:{},phases:{}});
-  useEffect(() => { workflowApi<{ choices: typeof clinicalChoices; research_identity: typeof identityOptions; biomarkers?: BiomarkerDefinitions }>("/forms/clinical-contract").then(c => {setClinicalChoices(c.choices);setIdentityOptions(c.research_identity);setBiomarkers(c.biomarkers || {});}).catch(() => setCatalogError("Chưa tải được danh mục lựa chọn của biểu mẫu. Vui lòng tải lại trang.")); }, []);
+  useEffect(() => { workflowApi<{ choices: typeof clinicalChoices; research_identity: typeof identityOptions }>("/forms/clinical-contract").then(c => {setClinicalChoices(c.choices);setIdentityOptions(c.research_identity);}).catch(() => setCatalogError("Chưa tải được danh mục lựa chọn của biểu mẫu. Vui lòng tải lại trang.")); }, []);
 
   // References for smooth scrolling
   const sectionRefs = {
@@ -242,8 +239,6 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
   const handleChange = (field: string, value: any) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
-      const marker = biomarkerWithUnit(field);
-      if (marker && value !== "Khác") next[`${marker}_unit_other`] = "";
       if (SURGICAL_FINDINGS.some(finding => finding.id === field) && value !== "Có") {
         next[`${field}_ghi_chu`] = "";
       }
@@ -772,14 +767,65 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
           {openSections.sec3 && (
             <div className="section-body">
               <div className="form-grid-3">
-                {BIOMARKER_KEYS.map(field => <div className="form-item" key={field}>
-                  <label className="field-label" htmlFor={`entry-${field}`}>{BIOMARKER_LABELS[field]}</label>
-                  <BiomarkerInput field={field} label={BIOMARKER_LABELS[field]} inputId={`entry-${field}`} value={form[field]}
-                    disabled={readOnly || busy} onChange={handleChange} min={0} max={field === "roma" ? 100 : undefined}
-                    unit={form[`${field}_unit`]} otherUnit={form[`${field}_unit_other`]}
-                    unitChoices={biomarkers[field] ? (clinicalChoices[biomarkers[field].unit_field] || []).map(String) : undefined}
-                    requireUnit={Boolean(biomarkers[field])}/>
-                </div>)}
+                {/* 17. CA 125 */}
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-ca_125">CA 125</label>
+                  <input id="entry-ca_125" disabled={readOnly || busy} aria-label="CA 125" name="ca_125"
+                    type="number" min="0"
+                    step="any"
+                    className="form-input"
+                    value={form.ca_125}
+                    onChange={(e) => handleChange("ca_125", e.target.value)}
+                  />
+                </div>
+
+                {/* 18. HE4 */}
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-he4">HE4</label>
+                  <input id="entry-he4" disabled={readOnly || busy} aria-label="HE4" name="he4"
+                    type="number" min="0"
+                    step="any"
+                    className="form-input"
+                    value={form.he4}
+                    onChange={(e) => handleChange("he4", e.target.value)}
+                  />
+                </div>
+
+                {/* 19. ROMA */}
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-roma">ROMA</label>
+                  <input id="entry-roma" disabled={readOnly || busy} aria-label="ROMA" name="roma"
+                    type="number" min="0" max="100"
+                    step="any"
+                    className="form-input"
+                    value={form.roma}
+                    onChange={(e) => handleChange("roma", e.target.value)}
+                  />
+                </div>
+
+                {/* 20. AFP */}
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-afp">AFP</label>
+                  <input id="entry-afp" disabled={readOnly || busy} aria-label="AFP" name="afp"
+                    type="number" min="0"
+                    step="any"
+                    className="form-input"
+                    value={form.afp}
+                    onChange={(e) => handleChange("afp", e.target.value)}
+                  />
+                </div>
+
+                {/* 21. beta hCG */}
+                <div className="form-item">
+                  <label className="field-label" htmlFor="entry-beta_hcg">beta hCG</label>
+                  <input id="entry-beta_hcg" disabled={readOnly || busy} aria-label="beta hCG" name="beta_hcg"
+                    type="number" min="0"
+                    step="any"
+                    className="form-input"
+                    value={form.beta_hcg}
+                    onChange={(e) => handleChange("beta_hcg", e.target.value)}
+                  />
+                </div>
               </div>
             </div>
           )}

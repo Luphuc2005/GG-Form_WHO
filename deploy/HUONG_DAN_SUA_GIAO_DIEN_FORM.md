@@ -1,6 +1,6 @@
 # Sửa bố cục biểu mẫu đã xuất bản từ trang quản lý
 
-Nếu cần bật thêm đơn vị cho 5 chỉ số xét nghiệm, dùng [hướng dẫn đơn vị xét nghiệm](HUONG_DAN_DON_VI_XET_NGHIEM.md), cần cập nhật cả backend và frontend. Hướng dẫn bên dưới chỉ dành cho bản sửa bố cục.
+Từ ngày 20/11/2026, tính năng chọn đơn vị cho CA 125, HE4, ROMA, AFP, beta hCG đã được bỏ theo yêu cầu. Năm mục này tiếp tục chỉ nhập số. Không chạy lệnh bật đơn vị xét nghiệm của bản cập nhật trước. Bản sửa bố cục và các câu hỏi do admin thêm vẫn được giữ lại.
 
 Website hiện đã có biểu mẫu v3 và câu Số lượng u do admin thêm trong phần Phẫu thuật. Cấu hình nằm trong database, dùng mã `custom_eb7f5f353789`, với ba lựa chọn Trái, Phải, 2 bên. Bản sửa này giữ nguyên mã và cấu hình đó.
 

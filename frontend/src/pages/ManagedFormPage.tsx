@@ -3,8 +3,6 @@ import { Check, ChevronDown, FileText, Send, Trash2 } from "lucide-react";
 import type { ComprehensiveFormPageProps } from "./ComprehensiveFormPage";
 import { ClinicalField } from "../types/schema";
 import { SURGICAL_FINDINGS } from "../components/SurgicalProtocolFields";
-import { BiomarkerInput } from "../components/BiomarkerInput";
-import { BIOMARKER_KEYS, BiomarkerDefinitions, biomarkerWithUnit } from "../types/biomarkers";
 import { RecordAnswers, workflowApi } from "../api/workflow";
 import "../styles/form-builder.css";
 import {
@@ -79,8 +77,6 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     phases: Record<string, string>;
   }>({ hospitals: {}, phases: {} });
   const [identityError, setIdentityError] = useState("");
-  const [biomarkerDefinitions, setBiomarkerDefinitions] = useState<BiomarkerDefinitions>({});
-  const [unitCatalog, setUnitCatalog] = useState<Record<string, string[]>>({});
   const navigationRef = useRef<HTMLElement>(null);
   const [activeSection, setActiveSection] = useState(compact ? "sec1" : "identity");
   const [open, setOpen] = useState<Record<string, boolean>>(() =>
@@ -106,14 +102,10 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     [form, diagnosis, other, secondDiagnosis, secondOther, selected, options],
   );
   useEffect(() => {
-    workflowApi<{ research_identity: typeof identity; biomarkers?: BiomarkerDefinitions; choices?: Record<string, (string | number)[]> }>(
+    workflowApi<{ research_identity: typeof identity }>(
       "/forms/clinical-contract",
     )
-      .then((c) => {
-        setIdentity(c.research_identity);
-        setBiomarkerDefinitions(c.biomarkers || {});
-        setUnitCatalog(Object.fromEntries(Object.entries(c.choices || {}).map(([key, choices]) => [key, choices.map(String)])));
-      })
+      .then((c) => setIdentity(c.research_identity))
       .catch(() =>
         setIdentityError(
           "Chưa tải được danh mục bệnh viện. Vui lòng tải lại trang.",
@@ -128,18 +120,9 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
       f.show_values.includes(String(form[f.show_when] || "")) ||
       filled(form[f.id])) &&
     (f.active || filled(form[f.id]));
-  const groupedMarkers = BIOMARKER_KEYS.filter(marker => fields.some(field => field.id === marker) &&
-    (fields.some(field => field.id === `${marker}_unit`) || Boolean(biomarkerDefinitions[marker])));
-  const groupedUnitIds = new Set(groupedMarkers.flatMap(marker => [`${marker}_unit`, `${marker}_unit_other`]));
-  const activeFields = fields.filter((f) => f.active && visible(f) && !groupedUnitIds.has(f.id));
-  const entered = (field: ClinicalField) => {
-    if (!filled(form[field.id])) return false;
-    const unit = fields.find(candidate => candidate.id === `${field.id}_unit`);
-    if (!unit?.active || !groupedMarkers.some(marker => marker === field.id)) return true;
-    return filled(form[unit.id]) && (form[unit.id] !== "Khác" || String(form[`${field.id}_unit_other`] || "").trim() !== "");
-  };
+  const activeFields = fields.filter((f) => f.active && visible(f));
   const count =
-    activeFields.filter(entered).length +
+    activeFields.filter((f) => filled(form[f.id])).length +
     Number(Boolean(diagnosis)) +
     Number(Boolean(secondDiagnosis));
   const total = activeFields.length + 2;
@@ -147,8 +130,6 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     setError("");
     setForm((previous) => {
       const next = { ...previous, [id]: value };
-      const marker = biomarkerWithUnit(id);
-      if (marker && value !== "Khác") next[`${marker}_unit_other`] = "";
       if (SURGICAL_FINDINGS.some(finding => finding.id === id) && value !== "Có") {
         next[`${id}_ghi_chu`] = "";
       }
@@ -181,14 +162,6 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
       "aria-label": field.label,
       "aria-describedby": field.help_text ? `hint-${field.id}` : undefined,
     };
-    const unitField = fields.find(candidate => candidate.id === `${field.id}_unit`);
-    const unitChoices = unitField?.choices || unitCatalog[biomarkerDefinitions[field.id]?.unit_field];
-    if (field.type === "number" && groupedMarkers.some(marker => marker === field.id) && unitChoices?.length) {
-      return <BiomarkerInput field={field.id} label={field.label} inputId={props.id} value={value} disabled={disabled}
-        onChange={change} min={field.min_value} max={field.max_value} unit={form[`${field.id}_unit`]}
-        otherUnit={form[`${field.id}_unit_other`]} unitChoices={unitChoices}
-        unitDisabled={disabled || Boolean(unitField && !unitField.active)} requireUnit={field.active && Boolean(unitField?.active)}/>;
-    }
     if (field.type === "select")
       return (
         <select
@@ -271,7 +244,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
   );
   const sectionStats = (key: string) => {
     const current = activeFields.filter(field => field.section === key);
-    return { filled: current.filter(entered).length, total: current.length };
+    return { filled: current.filter(field => filled(form[field.id])).length, total: current.length };
   };
   const whoCount = Number(Boolean(diagnosis)) + Number(Boolean(secondDiagnosis));
   const navigation = [
@@ -466,7 +439,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
                 <div className="section-content section-body">
                   <div className="form-grid-3">
                     {fields
-                      .filter((f) => f.section === key && visible(f) && !groupedUnitIds.has(f.id))
+                      .filter((f) => f.section === key && visible(f))
                       .map((field) => (
                         <div className={`form-item ${["textarea", "multiselect"].includes(field.type) ? "form-col-span-full" : ""}`} key={field.id}>
                           <label

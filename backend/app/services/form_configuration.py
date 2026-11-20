@@ -4,7 +4,6 @@ from sqlalchemy import select
 from app.models.form_version import FormVersion
 from app.schemas.form import ClinicalFieldSchema, FormSchemaDefinition
 from app.services.clinical_validation import CONTRACT, NUMBERS, SURGERY_DETAILS
-from app.services.biomarker_units import biomarker_configuration_errors
 from app.core.exceptions import ValidationErrorException
 
 FORM_KEY = "ovarian-pathology-who"
@@ -37,11 +36,6 @@ def baseline_fields():
             field.show_when, field.show_values = key.removesuffix("_ghi_chu"), ["Có"]
         if key == "sa_nang_trong_phan_dac_so_luong":
             field.show_when, field.show_values = "sa_nang_trong_phan_dac", ["Có"]
-        if key.endswith("_unit_other") and key.removesuffix("_unit_other") in CONTRACT.get("biomarkers", {}):
-            field.show_when, field.show_values = key.removesuffix("_other"), ["Khác"]
-            field.help_text = "Ghi đúng đơn vị/dạng kết quả trên phiếu xét nghiệm, tối đa 200 ký tự."
-        if key.endswith("_unit") and key.removesuffix("_unit") in CONTRACT.get("biomarkers", {}):
-            field.help_text = "Chọn theo phiếu gốc. Hệ thống không tự quy đổi hoặc suy đoán theo bệnh viện."
         if key in ("ubt_xoan", "ubt_vo"):
             field.section = "sec6"
         fields.append(field)
@@ -111,7 +105,6 @@ def validate_configuration(schema, previous, history):
             parent = current.get(field.show_when)
             if not parent or parent.id == field.id or parent.show_when or not field.show_values:
                 errors.append(f"{field.label}: điều kiện hiển thị không hợp lệ (chỉ hỗ trợ một cấp).")
-    errors.extend(biomarker_configuration_errors(schema, CONTRACT))
     pathology = next((f for f in schema.fields if f.id == "pathology"), None)
     iota_flags = {field.active for field in fields if field.id.startswith("iota_")}
     if len(iota_flags) > 1:
