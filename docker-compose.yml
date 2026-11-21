@@ -83,6 +83,36 @@ services:
     networks:
       - survey_internal
 
+  backup:
+    image: postgres:16-alpine
+    container_name: ovarian_survey_backup
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/backup_loop.sh"]
+    environment:
+      PGHOST: ${BACKUP_PGHOST:-postgres}
+      PGPORT: ${BACKUP_PGPORT:-5432}
+      PGDATABASE: ${BACKUP_PGDATABASE:-${POSTGRES_DB:-ovarian_survey}}
+      PGUSER: ${BACKUP_PGUSER:-${POSTGRES_USER:-survey_user}}
+      PGPASSWORD: ${BACKUP_PGPASSWORD:-${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}}
+      APPLICATION_DATABASE_URL: ${DATABASE_URL:-}
+      BACKUP_PGHOST: ${BACKUP_PGHOST:-}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+    volumes:
+      - backup_data:/backups
+      - ./scripts/backup_loop.sh:/scripts/backup_loop.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/scripts/backup_loop.sh", "--healthcheck"]
+      interval: 60s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    networks:
+      - survey_internal
+
   nginx:
     build:
       context: .
@@ -102,6 +132,8 @@ volumes:
     name: ovarian_survey_postgres_data
   export_data:
     name: ovarian_survey_export_data
+  backup_data:
+    name: ovarian_survey_backup_data
 
 networks:
   survey_internal:

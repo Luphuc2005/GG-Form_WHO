@@ -23,7 +23,32 @@ ls -lh /opt/ovarian-survey/backups/
 
 ---
 
-## 2. THIẾT LẬP SAO LƯU TỰ ĐỘNG HÀNG NGÀY (CRONJOB)
+## 2. SAO LƯU TỰ ĐỘNG BẰNG DOCKER COMPOSE
+
+Bản triển khai hiện tại có dịch vụ `backup`: tạo bản sao ngay khi khởi động, sau đó mặc định mỗi 24 giờ, giữ khoảng 7 ngày. Điều chỉnh bằng `BACKUP_INTERVAL_HOURS` và `BACKUP_KEEP_DAYS`. Bản sao nén được kiểm tra bằng `pg_restore --list` trước khi ghi nhận thành công; bản cũ không bị xóa khi lần sao lưu mới lỗi. Healthcheck báo lỗi nếu quá chu kỳ mà chưa có bản sao thành công.
+
+```bash
+docker compose ps backup
+docker compose logs --tail=20 backup
+docker compose exec -T backup ls -lh /backups
+```
+
+Dữ liệu nằm trong volume `ovarian_survey_backup_data`, tách với volume database. Tên file là `who-YYYYMMDD-HHMMSS.dump`, thời gian UTC. Để lấy một bản sao về máy chủ Linux, thay tên file dưới đây bằng tên vừa liệt kê:
+
+```bash
+mkdir -p backups
+umask 077
+docker compose exec -T backup cat /backups/who-YYYYMMDD-HHMMSS.dump > backups/who-YYYYMMDD-HHMMSS.dump
+docker compose exec -T postgres pg_restore --list < backups/who-YYYYMMDD-HHMMSS.dump >/dev/null
+```
+
+Giữ thêm bản sao trên nơi lưu trữ khác máy chủ. Volume backup cùng máy giúp xử lý xóa/sửa nhầm nhưng không thay thế bản sao ngoài máy khi ổ đĩa máy chủ hỏng. Khi ứng dụng dùng `DATABASE_URL` bên ngoài Compose, cấu hình nhóm `BACKUP_PG*` trong `.env.example` trỏ đúng database đó.
+
+Đã thử script backup trong container PostgreSQL 16, khôi phục vào database thử riêng với 20.000 phiếu giả và đối chiếu khớp toàn bộ hash nội dung. Trên máy chủ đích, vẫn cần diễn tập khôi phục bản sao của chính máy chủ.
+
+### Nếu dùng cron thay cho dịch vụ backup
+
+Không cần đặt thêm cron khi dịch vụ `backup` đã chạy. Nếu hạ tầng quản lý sao lưu bằng cron riêng, có thể dùng script thủ công ở phần 1 và lịch sau:
 
 Mở cấu hình crontab của hệ thống:
 ```bash

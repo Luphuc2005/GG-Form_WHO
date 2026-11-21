@@ -12,7 +12,7 @@ docker compose build
 docker compose up -d --wait --wait-timeout 90 postgres
 
 echo "Dừng ứng dụng để chạy migration."
-docker compose stop nginx backend worker
+docker compose stop nginx backend worker backup
 docker compose run --rm backend alembic upgrade head
 docker compose run --rm backend python -m app.commands.import_form form-definitions/ovarian-pathology-v1.json
 docker compose run --rm backend python -m app.commands.create_admin

@@ -14,5 +14,6 @@ tmp_file=$(mktemp "${backup_file}.XXXXXX")
 trap 'rm -f -- "$tmp_file"' EXIT
 
 docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$tmp_file"
+docker compose exec -T postgres pg_restore --list < "$tmp_file" >/dev/null
 mv -- "$tmp_file" "$backup_file"
 echo "Đã sao lưu PostgreSQL vào $backup_file"
