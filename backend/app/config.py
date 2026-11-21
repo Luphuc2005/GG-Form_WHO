@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -25,6 +26,10 @@ class Settings(BaseSettings):
 
     # Uvicorn workers
     WEB_CONCURRENCY: int = 4
+    RUN_BACKGROUND_WORKERS: bool = True
+    SHEETS_SYNC_BATCH_SIZE: int = Field(default=100, ge=1, le=200)
+    EXPORT_DIR: str = "data/exports"
+    EXPORT_TTL_HOURS: int = Field(default=24, ge=1, le=168)
 
     # CORS
     CORS_ORIGINS: str = "*"

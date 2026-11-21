@@ -48,6 +48,9 @@ class Submission(Base):
         Index("ix_submissions_form_version_id", "form_version_id"),
         Index("ix_submissions_created_at", "created_at"),
         Index("ix_submissions_classification", "classification"),
+        Index("ix_submissions_sync_queue", "sync_status", "sync_attempted_at"),
+        Index("ix_submissions_state_created", "workflow_status", "created_at", "id"),
+        Index("ix_submissions_owner_created", "owner_id", "created_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)

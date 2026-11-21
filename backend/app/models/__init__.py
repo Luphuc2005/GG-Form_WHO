@@ -6,5 +6,6 @@ from app.models.submission_event import SubmissionEvent
 from app.models.study_sequence import StudySequence
 from app.models.form_management import FormDraft, FormSheetJob
 from app.models.sheet_cleanup import SheetCleanupJob
+from app.models.export_job import ExportJob
 
 __all__ = ["Base", "FormVersion", "Submission", "AdminUser"]
