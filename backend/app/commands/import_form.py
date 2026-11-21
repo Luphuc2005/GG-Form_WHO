@@ -11,6 +11,30 @@ from app.schemas.form import FormSchemaDefinition
 from sqlalchemy import select, func
 
 
+def queue_managed_form_sync(db, form):
+    """A deployed managed definition must use the same durable queue as the UI."""
+    if form.schema_json.get("clinical_fields") is None:
+        return
+    latest_id = db.scalar(select(FormVersion.id).where(
+        FormVersion.form_key == form.form_key, FormVersion.status == "published",
+    ).order_by(FormVersion.version.desc()).limit(1))
+    if latest_id != form.id:
+        return
+    from sqlalchemy import update
+    from app.models.form_management import FormSheetJob
+    from app.models.submission import EXPORTABLE_STATES
+
+    job = db.get(FormSheetJob, form.form_key)
+    if job:
+        job.target_version, job.status, job.attempts = form.version, "pending", 0
+        job.error, job.attempted_at = None, None
+    else:
+        db.add(FormSheetJob(form_key=form.form_key, target_version=form.version, status="pending"))
+    db.execute(update(Submission).where(
+        Submission.workflow_status.in_(EXPORTABLE_STATES), Submission.sync_status != "syncing",
+    ).values(sync_status="pending", sync_attempts=0, sync_error=None))
+
+
 def import_form_schema(file_path: str, force: bool = False) -> None:
     if not os.path.exists(file_path):
         print(f"LỖI: Tệp '{file_path}' không tồn tại.")
@@ -66,6 +90,8 @@ def import_form_schema(file_path: str, force: bool = False) -> None:
             existing.schema_json = data
             existing.schema_hash = schema_hash
             existing.published_at = datetime.now(timezone.utc)
+            db.flush()
+            queue_managed_form_sync(db, existing)
             db.commit()
             print("Cập nhật biểu mẫu thành công.")
         else:
@@ -79,6 +105,8 @@ def import_form_schema(file_path: str, force: bool = False) -> None:
                 published_at=datetime.now(timezone.utc),
             )
             db.add(new_ver)
+            db.flush()
+            queue_managed_form_sync(db, new_ver)
             db.commit()
             print(f"Đã xuất bản biểu mẫu '{schema_def.form_key}' v{schema_def.version} thành công!")
     finally:
