@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AdminLoginRequest(BaseModel):
@@ -22,6 +22,7 @@ class AdminStatsResponse(BaseModel):
     by_form_version: Dict[int, int]
     by_workflow: Dict[str, int]
     by_sync: Dict[str, int]
+    by_sheet_removal: Dict[str, int] = Field(default_factory=dict)
     google_sheet_url: str | None = None
 
 

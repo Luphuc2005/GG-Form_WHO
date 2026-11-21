@@ -144,6 +144,23 @@ def test_cancelled_record_is_removed_but_database_row_remains(sync_env):
         assert sub is not None and sub.sync_status == "removed" and sub.synced_revision == 4
 
 
+def test_removal_is_prioritized_and_does_not_depend_on_schema_publication(sync_env, monkeypatch):
+    factory, destination, key, _ = sync_env
+    assert worker.process_one()
+    with factory() as db:
+        sub = db.get(Submission, key)
+        sub.workflow_status, sub.sync_status, sub.revision = "trashed", "pending", 4
+        db.commit()
+    def broken_schema(_):
+        raise RuntimeError("Synthetic schema publication failure")
+    monkeypatch.setattr("app.services.form_sheet_sync.ensure_schema", broken_schema)
+    monkeypatch.setattr(sheets, "_submission_row", broken_schema)
+    assert worker.process_one()
+    assert destination.rows == []
+    with factory() as db:
+        assert db.get(Submission, key).sync_status == "removed"
+
+
 def test_trash_then_restore_removes_and_republishes_the_same_uuid(sync_env):
     factory, destination, key, _ = sync_env
     assert worker.process_one()

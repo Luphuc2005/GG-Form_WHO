@@ -44,6 +44,7 @@ export interface AdminStats {
   by_form_version: Record<number, number>;
   by_workflow: Record<string, number>;
   by_sync: Record<string, number>;
+  by_sheet_removal?: Record<string, number>;
   google_sheet_url?: string | null;
 }
 

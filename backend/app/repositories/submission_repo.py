@@ -55,6 +55,11 @@ class SubmissionRepository:
             select(Submission.sync_status, func.count(Submission.id))
             .where(active).group_by(Submission.sync_status)
         ).all())
+        by_sheet_removal = dict(db.execute(
+            select(Submission.sync_status, func.count(Submission.id))
+            .where(Submission.workflow_status.in_(("trashed", "cancelled")))
+            .group_by(Submission.sync_status)
+        ).all())
 
         return {
             "total_submissions": total,
@@ -63,6 +68,7 @@ class SubmissionRepository:
             "by_form_version": by_ver,
             "by_workflow": by_workflow,
             "by_sync": by_sync,
+            "by_sheet_removal": by_sheet_removal,
         }
 
     @staticmethod

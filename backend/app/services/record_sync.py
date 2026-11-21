@@ -3,7 +3,7 @@ import asyncio
 import logging
 import urllib.error
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, update, or_
+from sqlalchemy import select, update, or_, case
 from app.database import SessionLocal
 from app.config import get_settings
 from app.models.submission import Submission, EXPORTABLE_STATES
@@ -51,7 +51,7 @@ def process_one():
         sub = db.scalar(select(Submission).where(or_(
             Submission.sync_status == "pending",
             (Submission.sync_status == "failed") & (Submission.sync_attempts < 5) & (Submission.sync_attempted_at < now-timedelta(minutes=1)),
-        )).order_by(Submission.id).limit(1))
+        )).order_by(case((Submission.workflow_status.in_(("trashed", "cancelled")), 0), else_=1), Submission.id).limit(1))
         if not sub:
             return False
         sub_id, revision = sub.id, sub.revision
@@ -62,21 +62,24 @@ def process_one():
         db.refresh(sub)
         try:
             with sheets._sync_lock:
-                from app.services.form_sheet_sync import ensure_schema
-                ensure_schema(db)
+                publishable = sub.workflow_status in EXPORTABLE_STATES
+                # Removing a UUID does not depend on the current form columns.
+                # A failed schema publication must not leave trashed rows visible.
+                if publishable:
+                    from app.services.form_sheet_sync import ensure_schema
+                    ensure_schema(db)
                 headers, existing, snapshot_rows = sheets._read_sheet_data()
                 key = str(sub.submission_uuid)
-                publishable = sub.workflow_status in EXPORTABLE_STATES
-                expected_headers, row = sheets._submission_row(sub)
                 if publishable:
+                    expected_headers, row = sheets._submission_row(sub)
                     expected_headers, row = sheets.fit_sheet_columns(headers, expected_headers, row)
                 # Reconciliation must not rewrite an already verified revision.
                 # This also restores status for records sent before tracking existed.
                 matching = [r for r in snapshot_rows if r and r[0].strip() == key]
-                numeric_labels = sheets.ExportService.numeric_labels(db)
-                identifier_labels = {label for field_key, label, _ in sheets.ExportService.get_columns_for_database(db) if field_key in ("so_hs", "para")}
+                numeric_labels = sheets.ExportService.numeric_labels(db) if publishable else set()
+                identifier_labels = {label for field_key, label, _ in sheets.ExportService.get_columns_for_database(db) if field_key in ("so_hs", "para")} if publishable else set()
                 unchanged = publishable and existing[key] == 1 and len(matching) == 1 and sheets.same_sheet_row(expected_headers, row, matching[0], numeric_labels, identifier_labels)
-                if unchanged:
+                if unchanged or (not publishable and not existing[key]):
                     actual, rows = existing, snapshot_rows
                 else:
                     # The legacy webhook supports replacement through delete-and-append.
@@ -110,9 +113,11 @@ def process_one():
 async def sync_loop():
     while True:
         try:
-            from app.services.form_sheet_sync import process_schema_job
-            await asyncio.to_thread(process_schema_job, SessionLocal, get_settings())
             more = await asyncio.to_thread(process_one)
+            from app.services.sheet_cleanup import process_cleanup_job
+            more = await asyncio.to_thread(process_cleanup_job, SessionLocal, get_settings()) or more
+            from app.services.form_sheet_sync import process_schema_job
+            more = await asyncio.to_thread(process_schema_job, SessionLocal, get_settings()) or more
         except Exception:
             log.warning("Sync queue unavailable; retrying later.")
             more = False

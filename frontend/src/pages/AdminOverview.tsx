@@ -22,6 +22,8 @@ export const AdminOverview: React.FC<Props> = ({ stats, error, onRetry, onReport
   const total = stats?.total_submissions || 0;
   const synced = stats?.by_sync?.synced || 0;
   const pending = (stats?.by_sync?.pending || 0) + (stats?.by_sync?.syncing || 0);
+  const removing = (stats?.by_sheet_removal?.pending || 0) + (stats?.by_sheet_removal?.syncing || 0);
+  const removalFailed = (stats?.by_sheet_removal?.failed || 0) + (stats?.by_sheet_removal?.not_configured || 0);
   const attention = Math.max(0, total - synced - pending);
   const percent = total ? Math.round(synced / total * 100) : 0;
   const groups = classificationGroups.map(group => ({ ...group, count: group.key === "other"
@@ -54,6 +56,7 @@ export const AdminOverview: React.FC<Props> = ({ stats, error, onRetry, onReport
         <div className="admin-sync-summary"><strong>{stats ? number(synced) : "—"}<span> / {stats ? number(total) : "—"} phiếu</span></strong><span>{percent}%</span></div>
         <div className="admin-sync-track" role="progressbar" aria-label="Tỷ lệ phiếu đã đồng bộ Google Sheets" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }}/></div>
         <div className="admin-sync-counts"><span><i className="dot-synced"/>{number(synced)} đã đồng bộ</span><span><i className="dot-pending"/>{number(pending)} đang chờ</span><span><i className="dot-attention"/>{number(attention)} chưa đồng bộ</span></div>
+        {(removing > 0 || removalFailed > 0) && <p className="admin-muted" role="status">{removing > 0 ? `${number(removing)} phiếu đang chờ gỡ khỏi Sheet. ` : ""}{removalFailed > 0 ? `${number(removalFailed)} phiếu chưa gỡ được; bấm Đồng bộ lại để thử lại.` : ""}</p>}
         <div className="admin-sync-bottom"><p>Xem trạng thái từng phiếu trong danh sách bên dưới.</p><button className="admin-insight-link" disabled={syncing} onClick={onSync}><RefreshCw size={14} className={syncing ? "is-spinning" : ""}/>{syncing ? "Đang yêu cầu…" : "Đồng bộ lại"}</button></div>
       </article>
     </div>
