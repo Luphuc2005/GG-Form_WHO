@@ -19,12 +19,13 @@ services:
       - survey_internal
 
   backend:
+    image: ovarian-survey-backend:local
     build:
       context: .
       dockerfile: backend/Dockerfile
     container_name: ovarian_survey_backend
     restart: unless-stopped
-    environment:
+    environment: &backend_environment
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-survey_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ovarian_survey}}"
       DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
@@ -34,11 +35,17 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      RUN_BACKGROUND_WORKERS: "false"
+      SHEETS_SYNC_BATCH_SIZE: ${SHEETS_SYNC_BATCH_SIZE:-100}
+      EXPORT_DIR: /app/data/exports
+      EXPORT_TTL_HOURS: ${EXPORT_TTL_HOURS:-24}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       ENABLE_DOCS: ${ENABLE_DOCS:-false}
       GOOGLE_SHEETS_WEBHOOK_URL: ${GOOGLE_SHEETS_WEBHOOK_URL:-}
       GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_SPREADSHEET_ID:-}
       GOOGLE_SHEETS_WEBHOOK_TOKEN: ${GOOGLE_SHEETS_WEBHOOK_TOKEN:-}
+    volumes:
+      - export_data:/app/data/exports
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,6 +55,31 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    networks:
+      - survey_internal
+
+  worker:
+    image: ovarian-survey-backend:local
+    container_name: ovarian_survey_worker
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "app.commands.run_worker"]
+    environment:
+      <<: *backend_environment
+      DB_POOL_SIZE: 3
+      DB_MAX_OVERFLOW: 2
+      WORKER_HEARTBEAT_PATH: /tmp/who-worker-heartbeat
+    volumes:
+      - export_data:/app/data/exports
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.commands.run_worker", "--healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     networks:
       - survey_internal
 
@@ -68,6 +100,8 @@ services:
 volumes:
   postgres_data:
     name: ovarian_survey_postgres_data
+  export_data:
+    name: ovarian_survey_export_data
 
 networks:
   survey_internal:

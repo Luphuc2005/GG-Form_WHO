@@ -54,6 +54,8 @@ frontend/node_modules/
 *.sqlite
 *.sqlite3
 backups/
+/backend/data/exports/
+/data/exports/
 /opt/ovarian-survey/backups/
 
 # Logs
