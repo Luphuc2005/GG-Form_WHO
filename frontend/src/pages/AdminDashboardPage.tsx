@@ -32,6 +32,7 @@ import {
   Activity,
 } from "lucide-react";
 import { OptionTree } from "../components/OptionTree";
+import { useExcelExport, ExcelExportButton, ExcelExportStatus } from "../components/ExcelExport";
 
 function formatLocalDateTime(dateStr: string): string {
   if (!dateStr) return "";
@@ -139,6 +140,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   token,
   onLogout,
 }) => {
+  const excelExport = useExcelExport();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [submissionsPage, setSubmissionsPage] = useState<AdminSubmissionsPage | null>(null);
   const [page, setPage] = useState(1);
@@ -1179,11 +1181,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#0f766e")}
             >
               <Download size={18} />
-              <span>Xuất CSV / Excel</span>
+              <span>Xuất CSV</span>
             </a>
+            <ExcelExportButton control={excelExport}/>
           </div>
         </div>
 
+        <ExcelExportStatus control={excelExport}/>
         {/* 3. Stat Cards Section */}
         {stats && (
           <div
