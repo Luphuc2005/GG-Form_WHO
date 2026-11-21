@@ -37,14 +37,16 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Lưu ý khi khởi tạo DB/Schema lúc startup (có thể DB chưa migrate): {e}")
 
     from app.services.record_sync import sync_loop
-    sync_task = asyncio.create_task(sync_loop()) if settings.APP_ENV != "test" else None
+    from app.services.export_jobs import export_loop
+    background_tasks = [asyncio.create_task(loop()) for loop in (sync_loop, export_loop)] if settings.APP_ENV != "test" and settings.RUN_BACKGROUND_WORKERS else []
     try:
         yield
     finally:
-        if sync_task:
-            sync_task.cancel()
+        for task in background_tasks:
+            task.cancel()
+        for task in background_tasks:
             try:
-                await sync_task
+                await task
             except asyncio.CancelledError:
                 pass
 
