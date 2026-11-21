@@ -19,6 +19,8 @@ from app.services.export_svc import ExportService
 settings = get_settings()
 logger = logging.getLogger("google_sheets")
 _sync_lock = threading.Lock()
+_sheet_layout_version = 0
+_sheet_layout_applied = False
 
 
 class LegacyWebhookError(RuntimeError):
@@ -42,7 +44,8 @@ def _send_webhook(payload: dict, expected_status: str = "success") -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=20) as response:
+    timeout = 120 if expected_status == "batch_synced" else 60 if expected_status == "schema_updated" else 20
+    with urllib.request.urlopen(req, timeout=timeout) as response:
         try:
             result = json.loads(response.read().decode("utf-8-sig"))
         except (ValueError, UnicodeError) as exc:
@@ -50,11 +53,25 @@ def _send_webhook(payload: dict, expected_status: str = "success") -> dict:
     if isinstance(result, dict) and result.get("status") == "unauthorized":
         raise RuntimeError("Token hoặc Spreadsheet ID không khớp với Script Properties của Apps Script.")
     if (isinstance(result, dict) and result.get("status") == "error"
-            and "appendRow()" in str(result.get("message", ""))
-            and expected_status in ("snapshot", "schema_updated")):
+            and ("appendRow()" in str(result.get("message", "")) or expected_status == "capabilities" and "Unsupported webhook action" in str(result.get("message", "")))
+            and expected_status in ("snapshot", "schema_updated", "capabilities")):
         raise LegacyWebhookError("Apps Script đang chạy bản cũ. Cập nhật mã và triển khai Phiên bản mới của Web App để đồng bộ cột.")
     if not isinstance(result, dict) or result.get("status") != expected_status:
         raise RuntimeError("Google Sheets chưa xác nhận thao tác; kiểm tra bản triển khai Apps Script.")
+    return result
+
+
+def batch_capabilities():
+    """Read headers/capabilities only, never clinical rows, for a modern webhook."""
+    try:
+        result = _send_webhook({"action": "capabilities"}, expected_status="capabilities")
+    except LegacyWebhookError:
+        return None
+    if result.get("batch_version") != 1:
+        return None
+    headers = result.get("headers")
+    if not isinstance(headers, list) or not all(isinstance(label, str) for label in headers):
+        raise RuntimeError("Cấu trúc cột Sheet không hợp lệ.")
     return result
 
 
@@ -75,8 +92,13 @@ def _read_legacy_sheet_rows() -> list[list[str]]:
 
 def _read_sheet_data() -> tuple[list[str], Counter, list[list[str]]]:
     """Read the configured sheet to verify UUIDs instead of trusting a sent count."""
+    global _sheet_layout_version, _sheet_layout_applied
+    _sheet_layout_version = 0
+    _sheet_layout_applied = False
     try:
         result = _send_webhook({"action": "snapshot"}, expected_status="snapshot")
+        _sheet_layout_version = int(result.get("layout_version", 0))
+        _sheet_layout_applied = bool(result.get("layout_applied", False))
         rows = result.get("rows")
     except LegacyWebhookError:
         rows = _read_legacy_sheet_rows()
