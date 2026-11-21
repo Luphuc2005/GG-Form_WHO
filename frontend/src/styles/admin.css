@@ -36,6 +36,7 @@
 /* Top Header Bar */
 .admin-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 20px;
@@ -85,9 +86,10 @@
 
 .admin-header-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  flex-shrink: 0;
+  max-width: 100%;
 }
 
 .admin-workspace .admin-sheet-link {
@@ -469,6 +471,7 @@
 }
 
 .admin-insight-heading {
+  flex-wrap: wrap;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -692,6 +695,7 @@
 
 .admin-sync-bottom {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1822,3 +1826,20 @@
     animation: none;
   }
 }
+
+.admin-cleanup-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.admin-cleanup-panel > div { min-width: 0; }
+.admin-cleanup-panel p { margin: 6px 0 0; font-size: 14px; }
+.admin-cleanup-actions { display: flex; flex-wrap: wrap; gap: 8px; }

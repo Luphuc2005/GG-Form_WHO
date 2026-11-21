@@ -6,6 +6,8 @@ import { resyncGoogleSheets } from "../api/client";
 import { CaseEditor } from "./CaseEditor";
 import { AccountManager } from "./AccountManager";
 import { AdminOverview } from "./AdminOverview";
+import { SheetCleanupPanel, SheetCleanupPreview } from "../components/SheetCleanupPanel";
+import { useExcelExport, ExcelExportButton, ExcelExportStatus } from "../components/ExcelExport";
 import { AdminStats } from "../types/submission";
 import "../styles/admin.css";
 
@@ -15,8 +17,12 @@ interface HistoryEvent { id: number; actor: string; action: string; revision: nu
 const time = (s: string | null) => s ? new Date(s.endsWith("Z") || /[+-]\d\d:\d\d$/.test(s) ? s : s+"Z").toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "—";
 const ACTION_LABELS: Record<string, string> = { create: "Tạo phiếu", save: "Lưu nháp", submit: "Gửi phiếu", edit: "Sửa nội dung", approve: "Duyệt phiếu", return: "Yêu cầu bổ sung", reopen: "Mở lại phiếu", cancel: "Hủy phiếu", trash: "Chuyển vào thùng rác", restore: "Khôi phục phiếu" };
 const isFilled = (value: unknown) => value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && !value.length) && !(typeof value === "object" && value !== null && !Object.keys(value).length);
+const syncLabel = (record: ClinicalRecord) => ["trashed", "cancelled"].includes(record.workflow_status)
+  ? ({pending: "Đang chờ gỡ khỏi Sheet", syncing: "Đang gỡ khỏi Sheet", failed: "Gỡ khỏi Sheet lỗi"} as Record<string,string>)[record.sync_status] || SYNC_LABELS[record.sync_status]
+  : SYNC_LABELS[record.sync_status];
 
 export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFormBuilder }) => {
+  const excelExport = useExcelExport();
   const [data, setData] = useState<Page>({ items: [], total: 0, page: 1, total_pages: 1 });
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [statsError, setStatsError] = useState("");
@@ -37,6 +43,8 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
   const [sheetNotice, setSheetNotice] = useState("");
   const [sheetWarning, setSheetWarning] = useState(false);
   const [sheetSyncBusy, setSheetSyncBusy] = useState(false);
+  const [cleanupPreview, setCleanupPreview] = useState<SheetCleanupPreview | null>(null);
+  const [removalKey, setRemovalKey] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -102,6 +110,24 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
     return () => { current = false; };
   }, [refresh, selected]);
 
+  useEffect(() => {
+    if (!removalKey) return;
+    let current = true;
+    const timer = window.setInterval(() => {
+      workflowApi<ClinicalRecord>(`/records/${removalKey}`).then(record => {
+        if (!current) return;
+        if (record.sync_status === "removed") {
+          setRecordNotice("Đã chuyển phiếu vào thùng rác và gỡ khỏi Google Sheet. Excel tải mới cũng đã loại phiếu này.");
+          setRemovalKey(null); setRefresh(n => n+1);
+        } else if (["failed", "not_configured"].includes(record.sync_status)) {
+          setRecordNotice(`Phiếu đã vào thùng rác và bị loại khỏi Excel tải mới. Chưa gỡ được khỏi Sheet: ${record.sync_error || "Bấm Đồng bộ lại để thử lại."}`);
+          setRemovalKey(null); setRefresh(n => n+1);
+        } else if (record.workflow_status !== "trashed") { setRemovalKey(null); }
+      }).catch(() => {});
+    }, 2000);
+    return () => { current = false; window.clearInterval(timer); };
+  }, [removalKey]);
+
   const open = async (key: string) => {
     setBusy(true); setError(""); setHistory(null); setShowInfo(false); setAdminEditing(false);
     try { setSelected(await workflowApi<ClinicalRecord>(`/records/${key}`)); window.scrollTo(0,0); }
@@ -137,14 +163,15 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
     setBusy(true);
     setTrashError("");
     try {
-      await workflowApi<ClinicalRecord>(`/records/${trashTarget.submission_uuid}/${restoring ? "restore" : "trash"}`, {
+      const changed = await workflowApi<ClinicalRecord>(`/records/${trashTarget.submission_uuid}/${restoring ? "restore" : "trash"}`, {
         method: "POST",
         body: JSON.stringify({ revision: trashTarget.revision }),
       });
       sessionStorage.removeItem(`record-draft:${user.id}:${trashTarget.submission_uuid}`);
       setTrashTarget(null);
       toList();
-      setRecordNotice(restoring ? "Đã khôi phục phiếu về trạng thái trước khi xóa." : "Đã chuyển phiếu vào thùng rác. Bạn có thể khôi phục trong tab Thùng rác.");
+      setRemovalKey(restoring ? null : changed.submission_uuid);
+      setRecordNotice(restoring ? "Đã khôi phục phiếu về trạng thái trước khi xóa." : "Phiếu đã vào thùng rác và bị loại khỏi Excel tải mới. Đang chờ gỡ khỏi Google Sheet…");
     } catch (e) {
       setTrashError((e as Error).message);
       setRefresh(n => n+1);
@@ -162,6 +189,7 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
     setShowMenu(false); setSheetSyncBusy(true); setSheetNotice(""); setError(""); setSheetWarning(false);
     try {
       const result = await resyncGoogleSheets(sessionStorage.getItem("admin_access_token") || undefined);
+      setCleanupPreview(result.cleanup_preview || null);
       setSheetWarning(Boolean(result.warning));
       const queued = result.count ? `Đã xếp ${result.count} phiếu vào hàng chờ. Theo dõi trạng thái từng phiếu.` : "Không có phiếu nào trong hệ thống cần gửi lên Sheet.";
       setSheetNotice(result.warning ? `${result.warning} ${result.count ? queued : ""}` : queued);
@@ -184,7 +212,7 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
       <nav aria-label="Công cụ quản trị" className="admin-header-actions">
         {user.role === "admin" && <button className="admin-secondary" onClick={() => {if(leave())onFormBuilder();}}><FileText size={16}/>Quản lý biểu mẫu</button>}
         {stats?.google_sheet_url && <a className="admin-sheet-link" href={stats.google_sheet_url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16}/>Mở Google Sheet</a>}
-        <a className="admin-primary" href="/api/v1/admin/export.xlsx"><Download size={16}/>Xuất Excel</a>
+        <ExcelExportButton control={excelExport}/>
         <div ref={menuRef} className="admin-menu-wrap">
           <button type="button" className="admin-user-menu" aria-expanded={showMenu} aria-label="Mở menu quản trị" onClick={() => setShowMenu(v => !v)}><span className="admin-avatar">{user.username.slice(0,1).toUpperCase()}</span><span>{user.username}</span><MoreHorizontal size={18}/></button>
           {showMenu && <div className="admin-menu"><button disabled={sheetSyncBusy} onClick={syncSheets}><Cloud size={16}/>{sheetSyncBusy ? "Đang yêu cầu đồng bộ…" : "Đồng bộ Google Sheets"}</button><a href="/api/v1/admin/export.csv"><Download size={16}/>Tải CSV</a><button onClick={() => { if(leave()){setShowMenu(false);onReports();} }}><FileText size={16}/>Thống kê</button>{user.role === "admin" && <button onClick={() => {setShowMenu(false);setShowAccounts(true);}}><Users size={16}/>Quản lý tài khoản</button>}<button onClick={() => {if(leave()) onLogout();}}><LogOut size={16}/>Đăng xuất</button></div>}
@@ -193,7 +221,11 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
     </header>
     {error && <p role="alert" className="workflow-error">{error}</p>}
     {recordNotice && <div className="admin-notice" role="status"><span>{recordNotice}</span><button className="admin-icon" aria-label="Đóng thông báo phiếu" onClick={() => setRecordNotice("")}><X size={16}/></button></div>}
+    <ExcelExportStatus control={excelExport}/>
     {sheetNotice && <div className={`admin-notice ${sheetWarning ? "admin-notice-warning" : ""}`} role={sheetWarning ? "alert" : "status"}><span>{sheetNotice}</span><button className="admin-icon" aria-label="Đóng thông báo đồng bộ" onClick={() => setSheetNotice("")}><X size={16}/></button></div>}
+    {canManageTrash && !selected && <SheetCleanupPanel preview={cleanupPreview} onQueued={() => {
+      setCleanupPreview(null); setSheetNotice(""); setSheetWarning(false); setRefresh(n => n+1);
+    }}/>}
     {selected ? <div className={`admin-detail-layout ${showInfo ? "with-panel" : ""}`}>
       <div className="admin-detail-main">
         <CaseEditor
@@ -229,7 +261,7 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
         <dl className="admin-metadata"><dt>Người nhập</dt><dd>{selected.owner_name}</dd><dt>Tạo lúc</dt><dd>{time(selected.created_at)}</dd><dt>Cập nhật gần nhất</dt><dd>{time(selected.updated_at || selected.created_at)}</dd><dt>Biểu mẫu</dt><dd>Phiên bản {selected.form_version}</dd></dl>
         {selected.trashed_at && <p className="admin-note">Đã chuyển vào thùng rác lúc {time(selected.trashed_at)}. Trạng thái trước đó là {STATE_LABELS[selected.trashed_from_state || ""] || "Chưa xác định"}.</p>}
         {selected.review_note && <p className="admin-note">Ghi chú: {selected.review_note}</p>}
-        <section className="admin-panel-section"><h3><Cloud size={16}/>Google Sheets</h3><p className={`admin-sync sync-${selected.sync_status}`}><span/>{SYNC_LABELS[selected.sync_status]}</p>{selected.sync_error && <p className="admin-muted">{selected.sync_error}</p>}<div className="admin-panel-buttons"><button disabled={busy || hasUnsaved} onClick={async () => {if(selected) {try{setSelected(await workflowApi<ClinicalRecord>(`/records/${selected.submission_uuid}`));}catch(e){setError((e as Error).message);}}}}>Cập nhật trạng thái</button>{["failed","not_configured"].includes(selected.sync_status) && <button disabled={busy} onClick={retrySync}>Thử đồng bộ lại</button>}</div></section>
+        <section className="admin-panel-section"><h3><Cloud size={16}/>Google Sheets</h3><p className={`admin-sync sync-${selected.sync_status}`}><span/>{syncLabel(selected)}</p>{selected.sync_error && <p className="admin-muted">{selected.sync_error}</p>}<div className="admin-panel-buttons"><button disabled={busy || hasUnsaved} onClick={async () => {if(selected) {try{setSelected(await workflowApi<ClinicalRecord>(`/records/${selected.submission_uuid}`));}catch(e){setError((e as Error).message);}}}}>Cập nhật trạng thái</button>{["failed","not_configured"].includes(selected.sync_status) && <button disabled={busy} onClick={retrySync}>Thử đồng bộ lại</button>}</div></section>
         <section className="admin-panel-section"><h3><History size={16}/>Lịch sử thay đổi</h3><button className="admin-text-button" disabled={historyBusy} onClick={showHistory}>{historyBusy ? "Đang tải…" : history ? "Làm mới lịch sử" : "Xem lịch sử"}</button>
           {history && <div className="admin-history">{!history.length && <p className="admin-muted">Chưa có lịch sử trước khi nâng cấp.</p>}{history.slice(0,historyLimit).map(event => <article key={event.id}><strong>{ACTION_LABELS[event.action] || event.action}</strong><small>{event.actor} · {time(event.created_at)}</small>{event.note && <p>{event.note}</p>}{event.after_answers && <details><summary>Nội dung thay đổi</summary><ul>{Object.entries(event.after_answers.clinical_data || {}).filter(([key,value]) => JSON.stringify(value) !== JSON.stringify(event.before_answers?.clinical_data?.[key]) && (isFilled(value) || isFilled(event.before_answers?.clinical_data?.[key]))).map(([key,value]) => <li key={key}><b>{labels[key] || (key === "missing_reasons" ? "Lý do thiếu dữ liệu" : key)}</b><span>{displayValue(event.before_answers?.clinical_data?.[key])} → {displayValue(value)}</span></li>)}</ul>{JSON.stringify(event.before_answers?.pathology) !== JSON.stringify(event.after_answers.pathology) && <p>GPB: {diagnosisText(event.before_answers)} → {diagnosisText(event.after_answers)}</p>}</details>}</article>)}{history.length > historyLimit && <button className="admin-text-button" onClick={() => setHistoryLimit(n => n+10)}>Xem thêm</button>}</div>}
         </section>
@@ -247,7 +279,7 @@ export const CaseWorkspace: React.FC<Props> = ({ user, onLogout, onReports, onFo
           <td><strong className={!record.ho_ten ? "admin-placeholder" : ""}>{record.ho_ten || "Chưa có họ tên"}</strong><small>Số HS: <span className="admin-mono">{record.so_hs || "—"}</span> · #{record.reference_code}</small></td>
           <td>{record.study_code || record.encounter_code || "Chưa cấp mã"}<small>{record.hospital_code || "Chưa có mã bệnh viện"}</small></td>
           <td>{time(record.updated_at || record.created_at)}<small>{record.owner_name}</small></td>
-          <td><span className={`state-badge state-${record.workflow_status}`}>{STATE_LABELS[record.workflow_status]}</span><small className={`admin-sync sync-${record.sync_status}`}><span/>{SYNC_LABELS[record.sync_status]}</small></td>
+          <td><span className={`state-badge state-${record.workflow_status}`}>{STATE_LABELS[record.workflow_status]}</span><small className={`admin-sync sync-${record.sync_status}`}><span/>{syncLabel(record)}</small></td>
           <td><div className="admin-row-actions">
             <button className="admin-row-open" disabled={busy} onClick={() => open(record.submission_uuid)}>Xem phiếu<ChevronRight size={16}/></button>
             {canManageTrash && <button

@@ -156,7 +156,7 @@ export async function publishAdminForm(
   return data;
 }
 
-export async function resyncGoogleSheets(token?: string): Promise<{ status: "queued"; count: number; warning?: string; sheet_extra_count?: number | null }> {
+export async function resyncGoogleSheets(token?: string): Promise<{ status: "queued"; count: number; warning?: string; sheet_extra_count?: number | null; cleanup_preview?: { count: number; preview_hash: string } }> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
