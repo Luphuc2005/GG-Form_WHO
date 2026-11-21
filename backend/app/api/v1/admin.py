@@ -25,6 +25,7 @@ from app.schemas.submission import SubmissionDetailResponse
 from app.schemas.form import FormSchemaDefinition, FormVersionResponse
 from app.services.auth_svc import AuthService
 from app.services.export_svc import ExportService
+from pydantic import BaseModel, Field
 
 settings = get_settings()
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -214,22 +215,23 @@ def resync_google_sheets(
     db: Session = Depends(get_db),
     _: AdminUser = Depends(AuthService.get_current_admin)
 ):
-    """Queue writes and report destination rows that the record queue cannot remove."""
+    """Queue record writes/removals and offer a reviewed cleanup of legacy rows."""
     from app.services import google_sheets_svc as sheets
     from app.services.record_sync import sync_error_message
     warning = None
     extra_count = None
+    cleanup_preview = None
     if sheets.settings.GOOGLE_SHEETS_SPREADSHEET_ID:
         try:
-            _, remote = sheets._read_sheet_snapshot()
-            local_keys = {str(key) for key in db.scalars(select(Submission.submission_uuid))}
-            extra_count = sum(count for key, count in remote.items() if key not in local_keys)
+            from app.services.sheet_cleanup import orphan_snapshot
+            snapshot, preview_hash = orphan_snapshot(db)
+            extra_count = len(snapshot["rows"])
             if extra_count:
                 warning = (
                     f"Sheet còn {extra_count} dòng phiếu không còn trong hệ thống. "
-                    "Các dòng này chưa được xóa. Nút đồng bộ chỉ gửi các phiếu hiện có; "
-                    "hãy xóa các dòng cũ trên Sheet bằng tài khoản có quyền chỉnh sửa."
+                    "Các dòng này chưa được xóa. Chọn Dọn dòng cũ để sao lưu và gỡ khỏi Sheet."
                 )
+                cleanup_preview = {"count": extra_count, "preview_hash": preview_hash}
         except Exception as error:
             warning = "Chưa đối chiếu được dữ liệu cũ trên Sheet. " + sync_error_message(error)
     else:
@@ -240,9 +242,49 @@ def resync_google_sheets(
     )).values(sync_status=case((Submission.sync_status == "syncing", "syncing"), else_="pending"), sync_error=None, sync_attempts=0))
     db.commit()
     response = {"status": "queued", "count": result.rowcount}
+    if cleanup_preview:
+        response["cleanup_preview"] = cleanup_preview
     if warning:
         response.update(warning=warning, sheet_extra_count=extra_count)
     return response
+
+
+class SheetCleanupRequest(BaseModel):
+    preview_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+@router.post("/google-sheets/cleanup")
+def cleanup_google_sheets(payload: SheetCleanupRequest, db: Session = Depends(get_db),
+                         user: AdminUser = Depends(AuthService.get_current_admin)):
+    from app.services.sheet_cleanup import queue_cleanup, present_job
+    return present_job(queue_cleanup(db, payload.preview_hash, user.username))
+
+
+@router.get("/google-sheets/cleanup/latest")
+def latest_sheet_cleanup(db: Session = Depends(get_db), _: AdminUser = Depends(AuthService.get_current_admin)):
+    from app.models.sheet_cleanup import SheetCleanupJob
+    from app.services.sheet_cleanup import present_job
+    return present_job(db.scalar(select(SheetCleanupJob).order_by(SheetCleanupJob.id.desc()).limit(1)))
+
+
+@router.get("/google-sheets/cleanup/{job_id}/backup.csv")
+def sheet_cleanup_backup(job_id: int, db: Session = Depends(get_db),
+                         _: AdminUser = Depends(AuthService.get_current_admin)):
+    import csv
+    import io
+    from app.models.sheet_cleanup import SheetCleanupJob
+    job = db.get(SheetCleanupJob, job_id)
+    if job is None:
+        raise NotFoundException("Không tìm thấy bản sao lưu dọn Sheet.")
+    output = io.StringIO()
+    output.write("\ufeff")
+    writer = csv.writer(output)
+    for row in [job.snapshot["headers"], *job.snapshot["rows"]]:
+        writer.writerow(["'"+cell if cell.startswith(("=", "+", "-", "@", "\t", "\r")) else cell for cell in row])
+    return Response(output.getvalue(), media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="sheet_cleanup_{job_id}_backup.csv"',
+        "Cache-Control": "no-store",
+    })
 
 
 @router.post("/forms/publish", response_model=FormVersionResponse)
