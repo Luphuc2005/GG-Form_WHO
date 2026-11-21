@@ -76,3 +76,7 @@ Khi cần khôi phục lại cơ sở dữ liệu:
    bash scripts/restore_db.sh /opt/ovarian-survey/backups/ovarian_2026-09-10_160000.dump
    ```
 3. Hệ thống sẽ hiển thị cảnh báo và yêu cầu xác nhận `DONG_Y` trước khi thực hiện.
+
+Script kiểm tra archive trước, tạo bản sao database hiện tại rồi dừng Nginx, backend, worker và backup trước khi phục hồi để không có tiến trình ghi đồng thời. Sau khi khôi phục, ứng dụng vẫn dừng. Đối chiếu commit cần dùng rồi chạy `bash scripts/deploy.sh` để chạy migration phù hợp và mở lại. Không restore khi còn người nhập dữ liệu.
+
+Script dùng cho database riêng của ứng dụng: thay toàn bộ schema `public` bằng nội dung bản sao trong một giao dịch. Bảng mới không có trong backup cũ cũng được gỡ, tránh lỗi khóa ngoại khi quay về schema cũ. Nếu SQL phục hồi lỗi, PostgreSQL rollback toàn bộ giao dịch. File SQL tạm chỉ người chạy đọc được và được xóa khi script kết thúc. Không dùng script này trên database dùng chung với ứng dụng khác.

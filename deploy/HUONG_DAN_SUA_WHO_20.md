@@ -44,7 +44,7 @@ Kết quả có `status: "published"` và `published_version`. Nếu biểu mẫ
 ### 5. Kiểm tra API và giao diện
 
 ```bash
-curl -fsS https://survey.dragonvisionai.com/api/v1/forms/current +  | docker compose exec -T backend python -c 'import json,sys; d=json.load(sys.stdin); f=next(f for f in d["schema_json"]["fields"] if f["id"]=="pathology"); print("version =",d["version"],"WHO options =",len(f["options"])); assert len(f["options"])==20'
+curl -fsS https://survey.dragonvisionai.com/api/v1/forms/current | docker compose exec -T backend python -c 'import json,sys; d=json.load(sys.stdin); f=next(f for f in d["schema_json"]["fields"] if f["id"]=="pathology"); print("version =",d["version"],"WHO options =",len(f["options"])); assert len(f["options"])==20'
 ```
 
 Mở một tab mới và nhập địa chỉ website để tạo phiên nhập mới. Kiểm tra WHO 1 và WHO 2 đều có 20 lựa chọn, gồm tên tiếng Anh và mã ICD-O như local.

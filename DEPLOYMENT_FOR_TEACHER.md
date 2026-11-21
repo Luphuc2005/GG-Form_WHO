@@ -35,6 +35,8 @@ Script build hai image, chờ PostgreSQL sẵn sàng, chạy Alembic đến `010
 
 ## Nâng cấp máy chủ đang chạy
 
+Máy chủ của chị Linh đang dùng hướng dẫn cập nhật frontend riêng trước đây: thực hiện theo [hướng dẫn triển khai lại từ form v3](deploy/HUONG_DAN_DEPLOY_LAI_CHO_LINH.md). Bản mới kiểm tra migration, worker và backup; không chỉ kiểm tra trang chủ trả HTTP 200.
+
 1. Giữ checkout, volume PostgreSQL và `.env` hiện có. Bổ sung giá trị thiếu theo bảng trên, đặc biệt là `POSTGRES_PASSWORD` phải khớp với volume. Giữ bản sao Sheet nếu đang đồng bộ.
 2. Chạy trong checkout của máy chủ. Script tạo bản sao PostgreSQL trước khi kéo mã, build image, tạm dừng ứng dụng trong lúc migration và mở lại sau khi đã kiểm tra.
 

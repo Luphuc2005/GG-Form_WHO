@@ -1,5 +1,7 @@
 # Cập nhật phần protocol phẫu thuật
 
+> Các lệnh cập nhật riêng trong tài liệu này chỉ áp dụng cho bản cũ. Với `main` hiện tại, dùng [hướng dẫn nâng cấp từ form v3](HUONG_DAN_DEPLOY_LAI_CHO_LINH.md); bản mới cần migration và worker. Không dùng `up --no-deps backend nginx` để bỏ qua các bước đó.
+
 Website đã xuất bản cấu hình v3 và admin đã tự thêm câu Số lượng u. Nếu mục đích hiện tại là sửa bố cục và giữ câu đã thêm, dùng [hướng dẫn sửa giao diện form](HUONG_DAN_SUA_GIAO_DIEN_FORM.md). Hướng dẫn bên dưới dành cho cập nhật bộ câu hỏi chuẩn trong code.
 
 Bản này thêm bốn mục vào phần VI trên form nhập liệu và màn hình xem/sửa phiếu admin:

@@ -1,5 +1,7 @@
 # Sửa bố cục biểu mẫu đã xuất bản từ trang quản lý
 
+> Hướng dẫn này mô tả bản frontend riêng ngày 20/11/2026. Khi kéo `main` mới có hàng đợi Excel/worker, **không chạy riêng các lệnh build nginx bên dưới**. Chị Linh dùng [hướng dẫn nâng cấp từ form v3](HUONG_DAN_DEPLOY_LAI_CHO_LINH.md), có sao lưu, migration và kiểm tra đầy đủ.
+
 Từ ngày 20/11/2026, tính năng chọn đơn vị cho CA 125, HE4, ROMA, AFP, beta hCG đã được bỏ theo yêu cầu. Năm mục này tiếp tục chỉ nhập số. Không chạy lệnh bật đơn vị xét nghiệm của bản cập nhật trước. Bản sửa bố cục và các câu hỏi do admin thêm vẫn được giữ lại.
 
 Website hiện đã có biểu mẫu v3 và câu Số lượng u do admin thêm trong phần Phẫu thuật. Cấu hình nằm trong database, dùng mã `custom_eb7f5f353789`, với ba lựa chọn Trái, Phải, 2 bên. Bản sửa này giữ nguyên mã và cấu hình đó.
