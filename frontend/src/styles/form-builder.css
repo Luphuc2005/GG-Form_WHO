@@ -6,6 +6,7 @@
   margin: 0 auto;
   padding: 18px 28px 48px;
   color: #0f172a;
+  overflow-wrap: anywhere;
 }
 
 .builder-loading-box {
@@ -295,6 +296,10 @@
   align-items: start;
 }
 
+.builder-layout > * {
+  min-width: 0;
+}
+
 /* Base Form Controls inside Builder */
 .builder-shell label {
   display: flex;
@@ -314,6 +319,7 @@
 .builder-shell select,
 .builder-shell textarea {
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   min-height: 38px;
   border: 1px solid #cbd5e1;
@@ -753,7 +759,7 @@
 
 .builder-two {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -855,6 +861,56 @@
   margin-top: 2px;
   font-size: 12px;
   color: #64748b;
+}
+
+.builder-followup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.builder-shell .builder-followup-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  text-align: left;
+  cursor: pointer;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.builder-followup-link svg {
+  flex-shrink: 0;
+}
+
+.builder-condition-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.builder-shell .builder-condition-values label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.builder-shell .builder-condition-values input {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
 }
 
 .builder-condition-pill {
@@ -1164,6 +1220,15 @@
   border-radius: 8px;
   background: #ffffff;
   font-size: 13.5px;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.managed-form .form-item {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .managed-form .managed-checks input[type="checkbox"] {
@@ -1291,6 +1356,14 @@
 
   .builder-two {
     grid-template-columns: 1fr;
+  }
+
+  .builder-editor-heading {
+    flex-direction: column;
+  }
+
+  .builder-reorder-group {
+    align-self: flex-end;
   }
 
   .builder-editor,
