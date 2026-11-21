@@ -186,33 +186,90 @@ class ExportService:
         from tempfile import SpooledTemporaryFile
         from openpyxl import Workbook
         from openpyxl.cell import WriteOnlyCell
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
         if output is None:
             output = SpooledTemporaryFile(max_size=8 * 1024 * 1024)
         workbook = Workbook(write_only=True)
-        sheet = workbook.create_sheet("Phiếu nghiên cứu")
-        sheet.freeze_panes = "A2"
         columns = cls.get_columns_for_database(db, include_internal=False)
-        sheet.append([label for _, label, _ in columns])
-        catalogs = {}
-        count = 0
-        for sub in SubmissionRepository.stream_all(db):
-            if sub.form_version_id not in catalogs:
-                schema = FormSchemaDefinition.model_validate(sub.form_version.schema_json)
-                catalogs[sub.form_version_id] = cls._build_maps(schema)
-            labels, codes = catalogs[sub.form_version_id]
-            values = cls._flatten_submission_to_row(sub, columns, labels, codes)
+        row_counts = {}
+
+        def create_sheet(name, color):
+            sheet = workbook.create_sheet(name)
+            sheet.freeze_panes = "E2"
+            sheet.sheet_properties.tabColor = color
+            sheet.sheet_view.showGridLines = False
+            sheet.row_dimensions[1].height = 72
+            for index, (key, _, label) in enumerate(columns, 1):
+                width = 24
+                if key == "hospital_code":
+                    width = 14
+                elif key == "ho_ten":
+                    width = 32
+                elif key == "dia_chi" or "ghi_chu" in key or "mô tả" in label.casefold():
+                    width = 42
+                sheet.column_dimensions[get_column_letter(index)].width = width
+            headers = []
+            for _, _, label in columns:
+                cell = WriteOnlyCell(sheet, value=label)
+                cell.data_type = "s"
+                cell.font = Font(name="Arial", size=12, bold=True, color="FFFFFF")
+                cell.fill = PatternFill("solid", fgColor=color)
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                headers.append(cell)
+            sheet.append(headers)
+            row_counts[sheet.title] = 0
+            return sheet
+
+        total = create_sheet("Tổng hợp", "6B5B85")
+        hospital_sheets = {
+            code: create_sheet(name, color) for code, name, color in (
+                ("TD", "TD - Từ Dũ", "0F766E"),
+                ("HV", "HV - Hùng Vương", "2563EB"),
+                ("YD", "YD - ĐH Y Dược", "7C3AED"),
+                ("GD", "GD - Gia Định", "B45309"),
+                ("UB", "UB - Ung Bướu CS2", "BE185D"),
+            )
+        }
+        other = None
+
+        def append(sheet, values):
             cells = []
             for (key, _, _), value in zip(columns, values):
                 if key in ("so_hs", "para") and isinstance(value, str) and value.startswith("'"):
                     value = value[1:]
                 cell = WriteOnlyCell(sheet, value=value)
                 if isinstance(value, str):
-                    cell.data_type = "s"  # Literal text, including leading zeros and formula-like names.
+                    cell.data_type = "s"  # Keep identifier zeros and formula-like text literal.
+                if key in ("so_hs", "para"):
+                    cell.number_format = "@"
                 cells.append(cell)
             sheet.append(cells)
+            row_counts[sheet.title] += 1
+
+        catalogs = {}
+        count = 0
+        # Stream the database once; only the current row is duplicated into its
+        # hospital tab. Progress counts records, not their copies across tabs.
+        for sub in SubmissionRepository.stream_all(db):
+            if sub.form_version_id not in catalogs:
+                schema = FormSchemaDefinition.model_validate(sub.form_version.schema_json)
+                catalogs[sub.form_version_id] = cls._build_maps(schema)
+            labels, codes = catalogs[sub.form_version_id]
+            values = cls._flatten_submission_to_row(sub, columns, labels, codes)
+            append(total, values)
+            data = (sub.answers or {}).get("clinical_data") or {}
+            hospital = hospital_sheets.get(str(data.get("hospital_code") or "").strip().upper())
+            if hospital is None:
+                if other is None:
+                    other = create_sheet("Khác - Chưa xác định", "64748B")
+                hospital = other
+            append(hospital, values)
             count += 1
             if on_progress and count % 500 == 0:
                 on_progress(count)
+        for sheet in workbook.worksheets:
+            sheet.auto_filter.ref = f"A1:{get_column_letter(len(columns))}{row_counts[sheet.title]+1}"
         workbook.save(output)
         if on_progress:
             on_progress(count)

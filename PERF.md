@@ -69,3 +69,9 @@ Mở trình duyệt tại `http://localhost:8089` để cấu hình số lượn
 - **p95**: Thời gian xử lý cho 95% người dùng.
 - **p99**: Độ trễ cao nhất của 1% người dùng cuối.
 - **Failures (%)**: Tỷ lệ lỗi (Bắt buộc phải bằng 0% đối với các request hợp lệ).
+
+## Excel theo bệnh viện — diễn tập 22/11/2026
+
+Trên máy phát triển với SQLite riêng và form managed v5, xuất 20.000 phiếu giả thành một file có 6 tab: Tổng hợp 20.000 dòng và mỗi tab TD/HV/YD/GD/UB 4.000 dòng. Lần đo sau cùng mất 38,61 giây để tạo file khoảng 8,17 MiB. Đã đọc lại toàn bộ các tab để kiểm tra số dòng và mã bệnh viện, cùng kiểm tra tiến độ chỉ đếm 20.000 phiếu gốc. Đây là kết quả local, không phải cam kết thời gian trên máy chủ triển khai.
+
+Luồng xuất tiếp tục đọc database một lượt theo lô, giữ bộ cột và danh mục theo phiên bản; mỗi phiếu được ghi vào Tổng hợp và đúng một tab bệnh viện. Phiếu cũ có mã chưa rõ được giữ thêm trong tab Khác - Chưa xác định. Bộ kiểm thử kiểm tra cả API trực tiếp và file do worker tạo; không dùng dữ liệu bệnh nhân thật.

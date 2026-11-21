@@ -41,6 +41,14 @@ Tính năng này cần migration `006_submission_trash`. Chạy quy trình nâng
 - Khi nâng cấp Sheet cũ, sao lưu trước và xem danh sách cột ở `/admin/form-builder` trước khi xuất bản. Cấu trúc mới ẩn UUID ở cột vật lý đầu tiên **ID đồng bộ** và đặt mã nghiên cứu ở cột hiển thị **Mã phiếu**. Cột lạ hoặc trùng tên cần được đối chiếu với cấu hình trước khi đồng bộ. Xem [hướng dẫn quản lý biểu mẫu](FORM_MANAGEMENT_GUIDE.md) và [thiết lập webhook có xác thực](GOOGLE_SHEETS_GUIDE.md).
 - Chỉ admin/bác sĩ được xem danh sách, sửa phiếu, xem lịch sử hoặc xuất dữ liệu. Sau khi sinh viên gửi, khóa nháp không cho đọc nội dung đã được bác sĩ sửa hoặc sửa lại phiếu đó.
 
+## Xuất Excel theo bệnh viện
+
+Mỗi lần bấm **Xuất Excel mới**, file có tab **Tổng hợp** cùng năm tab **TD - Từ Dũ**, **HV - Hùng Vương**, **YD - ĐH Y Dược**, **GD - Gia Định**, **UB - Ung Bướu CS2**. Mỗi tab giữ nguyên bộ cột xuất hiện tại, có bộ lọc và cố định hàng tiêu đề/các cột định danh. Bệnh viện chưa có phiếu vẫn có tab tiêu đề; phiếu cũ thiếu mã hoặc có mã bệnh viện ngoài danh mục nằm thêm ở **Khác - Chưa xác định** và vẫn có trong Tổng hợp.
+
+Chỉ các phiếu đã gửi thuộc diện xuất dữ liệu được đưa vào file; bản nháp, phiếu đã hủy và trong thùng rác không xuất ở bất kỳ tab nào. Tiến độ đếm số phiếu gốc, không cộng thêm bản sao ở tab bệnh viện. Số 0 đầu của số hồ sơ/PARA được giữ nguyên.
+
+File đã tải là bản chụp tại thời điểm xuất. Sau khi sửa, xóa, khôi phục hoặc cập nhật ứng dụng, bấm **Xuất Excel mới** để nhận dữ liệu và các tab mới. File cũ đã tải không tự thay đổi.
+
 ## Nâng cấp và chạy local
 
 ```powershell

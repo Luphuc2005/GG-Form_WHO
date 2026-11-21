@@ -65,9 +65,11 @@ Cuối cùng Ctrl+F5, đăng nhập bằng tài khoản cũ, kiểm tra v3/câu 
 
 Ngày 21/11/2026 đã chạy Docker Compose trên database PostgreSQL 16 riêng với cấu hình form v3 công khai và ba phiếu giả, nâng từ migration `007_ultrasound_conclusion` lên `010_search_indexes`. Đối chiếu toàn bộ cấu hình form, câu trả lời, phiên bản phiếu, mã phiếu, hash mật khẩu admin và bộ đếm mã phiếu đều khớp; phiên đăng nhập cũ vẫn hợp lệ. Đã khôi phục backup schema cũ rồi chạy lại chính `scripts/deploy.sh` thành công.
 
-API, worker, backup, frontend và asset build đều qua kiểm tra. Trình duyệt Chrome tải được Excel từ worker, giữ câu Số lượng u tùy chỉnh, hiện đủ mũi tên, đưa con trỏ tới mục bắt buộc và không tràn ngang ở chiều rộng 375 px. Bộ kiểm thử backend đạt 230 test; frontend build và hai bộ kiểm thử Apps Script đạt.
+API, worker, backup, frontend và asset build đều qua kiểm tra. Trình duyệt Chrome tải được Excel từ worker, giữ câu Số lượng u tùy chỉnh, hiện đủ mũi tên, đưa con trỏ tới mục bắt buộc và không tràn ngang ở chiều rộng 375 px. Bộ kiểm thử backend hiện đạt 233 test; frontend build và hai bộ kiểm thử Apps Script đạt.
 
 Lần kiểm tra đồng bộ cuối đã bổ sung trường hợp xuất bản form hoặc bấm thử lại khi phiếu đang được gửi. Phiếu đang chạy giữ lượt gửi hiện tại rồi tự vào hàng đợi lại, tránh bỏ sót cột mới hoặc mất yêu cầu thử lại. Bốn tình huống này đạt trên PostgreSQL 16 với đích Sheet giả, cho cả đồng bộ theo lô và luồng Script cũ. Sửa này không cần migration mới hoặc thay database.
+
+Ngày 22/11/2026 bổ sung xuất Excel có tab Tổng hợp và năm tab bệnh viện giống Google Sheets. Đã kiểm tra luồng xuất trực tiếp/hàng đợi, giữ số 0 đầu, lọc phiếu hủy/thùng rác và mở file mẫu trong Microsoft Excel. Bài thử 20.000 phiếu giả có đủ 20.000 dòng Tổng hợp và 4.000 dòng mỗi bệnh viện. Sau cập nhật backend/worker, chọn **Xuất Excel mới**; file cũ không tự thêm tab. Phần này giữ database hiện có và không cần migration mới.
 
 Đây là diễn tập bằng dữ liệu giả, chưa triển khai lên máy chủ của chị Linh. Chưa thực hiện ghi/xóa trên Google Sheet thật; cần cập nhật Web App và kiểm tra kết nối trên máy chủ theo bước 4.
 
