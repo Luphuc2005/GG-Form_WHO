@@ -68,9 +68,9 @@ const fontSheet={getRange(row,col,height,width){
     getFontSizes(){assert.equal(row,2);return [[10,12,12]];},
     setFontFamilies(fonts){typographyCalls.push({row,fonts});return this;},
     setFontSizes(sizes){typographyCalls.push({row,sizes});return this;}};
-}};
+},setRowHeight(row,height){typographyCalls.push({row,height});}};
 context.applyDataRowTypography(fontSheet,3,3);
-assert.deepEqual(typographyCalls,[{row:3,fonts:[['Arial','Arial','Arial']]},{row:3,sizes:[[10,12,12]]}]);
+assert.deepEqual(typographyCalls,[{row:3,fonts:[['Arial','Arial','Arial']]},{row:3,sizes:[[10,12,12]]},{row:3,height:48}]);
 console.log('Row font checks passed: later rows inherit the per-column font family and size from row 2.');
 
 properties.set('GOOGLE_SHEETS_WEBHOOK_TOKEN', 'synthetic-token');
@@ -96,7 +96,7 @@ const auth = {token: 'synthetic-token', spreadsheet_id: 'synthetic-sheet'};
 assert.equal(post({action: 'snapshot'}).status, 'unauthorized');
 assert.equal(post({...auth, spreadsheet_id: 'some-other-sheet', action: 'delete'}).status, 'unauthorized');
 assert.equal(opened, 0);
-assert.deepEqual(post({...auth, action: 'snapshot'}), {status: 'snapshot', rows: existingCode.rows});
+assert.deepEqual(post({...auth, action: 'snapshot'}), {status: 'snapshot', rows: existingCode.rows, layout_version: 2, layout_applied: false});
 assert.equal(post({...auth, action: 'resync_all'}).status, 'error');
 console.log('Webhook checks passed: private readback, fixed spreadsheet ID, and rejected unauthenticated requests.');
 
@@ -112,3 +112,29 @@ context.alignFormColumns(legacyTrimmed, {schema_version: 1, columns: legacyColum
 assert.deepEqual(legacyTrimmed.rows[0], ['Mã phiếu', 'Tên', 'Mã nghiên cứu', 'Kết luận siêu âm']);
 assert.deepEqual(legacyTrimmed.rows[1], ['synthetic-uuid', 'SYNTHETIC', 'YD_R_00001']);
 console.log('Legacy Sheet conclusion check passed with original column positions.');
+
+properties.clear();
+const grouped = new Sheet(['ID đồng bộ', 'Tên', 'Kết luận', 'Mã phiếu'], ['synthetic-uuid', 'SYNTHETIC', 'KEEP CONCLUSION', 'TD_R_00001']);
+grouped.getName = () => 'Tổng hợp';
+grouped.setTabColor = () => {};
+const originalStyle = context.styleOrganizedSheet;
+const originalViews = context.syncHospitalViews;
+context.styleOrganizedSheet = () => {};
+context.syncHospitalViews = () => {};
+context.alignFormColumns(grouped, {schema_version: 7, organize_columns: true, columns: [
+  {key:'submission_uuid', label:'ID đồng bộ', aliases:['ID đồng bộ'], export:true},
+  {key:'study_code', label:'Mã phiếu', aliases:['Mã phiếu'], export:true},
+  {key:'custom_name', label:'Tên', aliases:['Tên'], export:true},
+  {key:'sa_ket_luan', label:'Kết luận', aliases:['Kết luận'], export:true},
+]});
+assert.deepEqual(grouped.rows[0], ['ID đồng bộ', 'Mã phiếu', 'Tên', 'Kết luận']);
+assert.deepEqual(grouped.rows[1], ['synthetic-uuid', 'TD_R_00001', 'SYNTHETIC', 'KEEP CONCLUSION']);
+context.styleOrganizedSheet = originalStyle;
+context.syncHospitalViews = originalViews;
+const formula = context.hospitalViewFormula('Tổng hợp', 'TD');
+assert.ok(formula.startsWith('=LET(') && formula.includes('FILTER(') && formula.includes('Mã bệnh viện'));
+assert.ok(formula.includes('COLUMNS(') && formula.includes('ROWS('));
+assert.ok(!formula.includes('QUERY('), 'mixed identifier types must not be coerced');
+assert.ok(context.hospitalViewFormula('Tổng hợp', 'TD', 'vi_VN').startsWith('=LET(source;'));
+assert.throws(() => context.hospitalViewFormula('Tổng hợp', 'INVALID'), /Invalid hospital/);
+console.log('Hospital layout checks passed: value-preserving column moves, dynamic FILTER views, and hospital-code validation.');
