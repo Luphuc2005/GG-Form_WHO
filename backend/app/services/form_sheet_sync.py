@@ -9,10 +9,11 @@ from app.services.clinical_validation import SURGERY_FIELDS
 from app.services import google_sheets_svc as sheets
 
 
-def ensure_schema(db):
+def ensure_schema(db, metadata=None):
     definitions, managed = export_definitions(db)
     additions = []
-    if not managed:
+    empty_destination = metadata is not None and not metadata["headers"]
+    if not managed and not empty_destination:
         # Append collected additions while preserving a hospital's trimmed layout.
         # The surgical protocol adds its switches and descriptions together.
         for group in (("sa_ket_luan",), SURGERY_FIELDS):
@@ -26,8 +27,13 @@ def ensure_schema(db):
         if not additions:
             return
     current = FormRepository.get_published_by_key(db, FORM_KEY)
-    headers, _, _ = sheets._read_sheet_data()
-    if not managed:
+    if metadata is None:
+        headers, _, _ = sheets._read_sheet_data()
+        layout_version, layout_applied = sheets._sheet_layout_version, sheets._sheet_layout_applied
+    else:
+        headers = metadata["headers"]
+        layout_version, layout_applied = metadata.get("layout_version", 0), metadata.get("layout_applied", False)
+    if not managed and not empty_destination:
         missing = [d for d in definitions if d["key"] in additions and d["export"] and d["label"] not in headers]
         if not headers or not missing:
             return
@@ -36,12 +42,20 @@ def ensure_schema(db):
         definitions = [{**exported[index], "label": label, "aliases": [label]} for label, index in zip(headers, positions)]
         definitions.extend(missing)
     expected = [d["label"] for d in definitions if d["export"]]
-    if len(headers) == len(expected) and set(headers) == set(expected):
+    ordered_layout = managed and layout_version >= 1
+    if (headers == expected and layout_applied if ordered_layout else len(headers) == len(expected) and set(headers) == set(expected)):
         return
     sheets._send_webhook({"action": "schema", "schema_version": current.version, "columns": definitions,
-                         "preserve_column_order": not managed}, expected_status="schema_updated")
-    actual, _, _ = sheets._read_sheet_data()
-    if len(actual) != len(expected) or set(actual) != set(expected):
+                         "preserve_column_order": not managed, "organize_columns": managed}, expected_status="schema_updated")
+    if metadata is None:
+        actual, _, _ = sheets._read_sheet_data()
+    else:
+        updated = sheets.batch_capabilities()
+        if updated is None:
+            raise RuntimeError("Google Sheets chưa xác nhận thao tác; kiểm tra bản triển khai Apps Script.")
+        metadata.update(updated)
+        actual = updated["headers"]
+    if (actual != expected if ordered_layout else len(actual) != len(expected) or set(actual) != set(expected)):
         raise RuntimeError("Cấu trúc cột Sheet khác biểu mẫu xuất dữ liệu.")
 
 
@@ -71,9 +85,16 @@ def process_schema_job(factory, settings):
             try:
                 with sheets._sync_lock:
                     ensure_schema(db)
-            except Exception:
-                result = {"status": "failed", "error": "Chưa cập nhật được cột Google Sheets. Kiểm tra kết nối và triển khai lại deploy/google_apps_script.js bản mới, rồi thử lại."}
-        db.execute(update(FormSheetJob).where(FormSheetJob.form_key == FORM_KEY, FormSheetJob.target_version == version,
+            except Exception as error:
+                from app.services.record_sync import sync_error_message
+                result = {"status": "failed", "error": sync_error_message(error)}
+        completed = db.execute(update(FormSheetJob).where(FormSheetJob.form_key == FORM_KEY, FormSheetJob.target_version == version,
             FormSheetJob.status == "syncing", FormSheetJob.attempts == attempts+1).values(**result))
+        if completed.rowcount == 1 and result["status"] == "synced":
+            # A shared schema failure may have exhausted row retries. Once the
+            # schema is verified, release those records, including removals.
+            db.execute(update(Submission).where(Submission.sync_status == "failed").values(
+                sync_status="pending", sync_attempts=0, sync_error=None,
+            ))
         db.commit()
         return True
