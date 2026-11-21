@@ -12,6 +12,9 @@ import { RecordAnswers, workflowApi } from "../api/workflow";
 import { ManagedFormPage } from "./ManagedFormPage";
 import { SurgicalProtocolFields, SURGICAL_FINDINGS } from "../components/SurgicalProtocolFields";
 import { WhoResultsFields, whoValueAt, buildWhoPathology } from "../components/WhoResultsFields";
+import { missingRequiredFields } from "../utils/requiredFields";
+import { useRequiredFieldNavigation, RequiredValidationRef } from "../hooks/useRequiredFieldNavigation";
+import { RequiredFieldsNotice } from "../components/RequiredFieldsNotice";
 
 export interface ComprehensiveFormPageProps {
   initialAnswers: RecordAnswers;
@@ -25,11 +28,13 @@ export interface ComprehensiveFormPageProps {
   identityVersion?: number;
   studyCode?: string | null;
   saveStatus?: string;
+  validationRef?: RequiredValidationRef;
 }
 
 export const ComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = props => props.schema.clinical_fields ? <ManagedFormPage {...props}/> : <LegacyComprehensiveFormPage {...props}/>;
 
-const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ initialAnswers, schema, readOnly, busy, onDraftChange, onSubmit, submitLabel = "Gửi phiếu", compact = false, identityVersion = 2, studyCode = null, saveStatus = "" }) => {
+const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ initialAnswers, schema, readOnly, busy, onDraftChange, onSubmit, submitLabel = "Gửi phiếu", compact = false, identityVersion = 2, studyCode = null, saveStatus = "", validationRef }) => {
+  const formRoot = useRef<HTMLDivElement>(null);
   const pathologyOptions = (schema.fields.find(f => f.id === "pathology")?.options || []).map(o => ({ ...o, code: o.numericCode || "", classification: o.classification || "unspecified" }));
   const [selectedPathologyId, setSelectedPathologyId] = useState(whoValueAt(initialAnswers, 1).id);
   const [pathologyOtherText, setPathologyOtherText] = useState(whoValueAt(initialAnswers, 1).other);
@@ -232,6 +237,8 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
     classification: pathologyOptions.find(o => o.id === selectedPathologyId)?.classification || "unspecified",
     clinical_data: form,
   });
+  const required = useRequiredFieldNavigation(missingRequiredFields(schema, buildAnswers(), identityVersion), formRoot, navigationRef,
+    section => { setActiveTab(section); setOpenSections(previous => ({...previous, [section]: true})); }, compact, validationRef);
   useEffect(() => { setFormError(""); }, [form, selectedPathologyId, pathologyOtherText, secondPathologyId, secondPathologyOtherText]);
   useEffect(() => { if (!readOnly) onDraftChange(buildAnswers()); }, [form, selectedPathologyId, pathologyOtherText, secondPathologyId, secondPathologyOtherText, readOnly, onDraftChange]);
 
@@ -270,16 +277,8 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
     e.preventDefault(); setFormError("");
     if (readOnly || busy) return;
     if (compact) { await onSubmit(buildAnswers()); return; }
-    if (!form.hospital_code?.trim() || !form.study_phase) {
-      setFormError("Chọn bệnh viện và giai đoạn nghiên cứu trước khi gửi phiếu."); scrollToSection("meta"); return;
-    }
-    if (!form.so_hs?.trim()) {
-      setFormError("Điền số hồ sơ ở mục I trước khi gửi phiếu."); scrollToSection("sec1"); return;
-    }
+    if (!required.validate()) return;
     if (isIotaSumInvalid) { setFormError("Kiểm tra tỷ lệ: cần nhập đủ 6 ô, mỗi ô từ 0 đến 100%, và tổng cả 6 ô phải bằng 100% theo quy ước của phiếu."); scrollToSection("sec4"); return; }
-    if (!selectedPathologyId || (pathologyOptions.find(o => o.id === selectedPathologyId)?.has_other_text && !pathologyOtherText.trim()) || (pathologyOptions.find(o => o.id === secondPathologyId)?.has_other_text && !secondPathologyOtherText.trim())) {
-      setFormError("Vui lòng chọn kết quả GPB; chọn Khác cần ghi rõ nội dung."); scrollToSection("sec7"); return;
-    }
     await onSubmit(buildAnswers());
   };
 
@@ -401,7 +400,7 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
 
 
   return (
-    <div className={`form-container ${compact ? `admin-case-form ${readOnly ? "is-read-only" : "is-editable"}` : "entry-form"}`}>
+    <div ref={formRoot} className={`form-container ${compact ? `admin-case-form ${readOnly ? "is-read-only" : "is-editable"}` : "entry-form"}`}>
       {!compact && <header className="form-card header-card entry-header">
         <div className="entry-header-main">
           <span className="entry-header-icon"><FileText size={25} aria-hidden="true"/></span>
@@ -418,6 +417,7 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
       <form onSubmit={handleSubmit}>
         <fieldset disabled={busy} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
         {(catalogError || (compact && formError)) && <p className="workflow-error" role="alert">{catalogError || formError}</p>}
+        <RequiredFieldsNotice issues={required.issues} onFocus={required.focus}/>
         <div ref={sectionRefs.meta} id="entry-meta" className="form-card entry-identity-card">
           <h2>{identityVersion >= 2 || form.study_phase ? "Tạo mã phiếu" : "Đợt điều trị / phẫu thuật"}</h2>
           {!compact && <p>Chọn bệnh viện và giai đoạn nghiên cứu. Số thứ tự được cấp tự động khi gửi phiếu.</p>}
@@ -428,8 +428,8 @@ const LegacyComprehensiveFormPage: React.FC<ComprehensiveFormPageProps> = ({ ini
             <div className="study-code-field"><span className="study-code-label">Mã phiếu (tự động)</span><output className={`study-code-preview ${studyCode ? "is-issued" : ""}`} aria-label="Mã phiếu" aria-live="polite">{studyCode || (form.hospital_code && form.study_phase ? `${form.hospital_code}_${form.study_phase}_•••••` : "Được cấp khi gửi phiếu")}</output><small>{studyCode ? "Mã đã cấp được giữ nguyên." : "Số thứ tự 5 chữ số, tăng liên tục."}</small></div>
           </div>
           </> : <div className="form-grid-3">
-            <label>Mã bệnh viện *<input disabled={readOnly || busy} aria-label="Mã bệnh viện" name="hospital_code" className="form-input" value={form.hospital_code} maxLength={100} onChange={e => handleChange("hospital_code", e.target.value)} /></label>
-            <label>Mã đợt điều trị *<input disabled={readOnly || busy} aria-label="Mã đợt điều trị" name="encounter_code" className="form-input" value={form.encounter_code} maxLength={100} onChange={e => handleChange("encounter_code", e.target.value)} /></label>
+            <label>Mã bệnh viện *<input id="study-hospital" disabled={readOnly || busy} aria-label="Mã bệnh viện" name="hospital_code" className="form-input" value={form.hospital_code} maxLength={100} onChange={e => handleChange("hospital_code", e.target.value)} /></label>
+            <label>Mã đợt điều trị *<input id="entry-encounter_code" disabled={readOnly || busy} aria-label="Mã đợt điều trị" name="encounter_code" className="form-input" value={form.encounter_code} maxLength={100} onChange={e => handleChange("encounter_code", e.target.value)} /></label>
           </div>}
         </div>
         {/* ============================================================== */}

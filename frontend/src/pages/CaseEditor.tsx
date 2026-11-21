@@ -12,6 +12,7 @@ export const CaseEditor: React.FC<Props> = ({ initial, userId, onExit, onRecordC
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const validationRef = useRef<(() => boolean) | null>(null);
   const [dirty, setDirty] = useState(false);
   const cacheKey = `record-draft:${userId}:${initial.submission_uuid}`;
   const [startingAnswers] = useState<RecordAnswers>(() => {
@@ -91,6 +92,7 @@ export const CaseEditor: React.FC<Props> = ({ initial, userId, onExit, onRecordC
 
   const saveNow = async () => { setBusy(true); try { await save(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
   const submit = async (answers: RecordAnswers) => {
+    if (validationRef.current?.() === false) return;
     latest.current = answers;
     setBusy(true); setError("");
     try {
@@ -124,7 +126,7 @@ export const CaseEditor: React.FC<Props> = ({ initial, userId, onExit, onRecordC
     </div>
     {error && <div className="workflow-error" role="alert">{error}<button className="admin-text-button" type="button" onClick={() => {if(!dirty || window.confirm("Tải lại sẽ bỏ các thay đổi chưa lưu. Tiếp tục?")){sessionStorage.removeItem(cacheKey);window.location.reload();}}}>Tải lại danh sách</button></div>}
     {editable && <p className={`admin-save-message ${dirty ? "is-unsaved" : ""}`} role="status">{busy ? "Đang lưu dữ liệu…" : dirty ? "Có thay đổi chưa lưu." : message || "Chỉnh sửa nội dung rồi bấm Lưu thay đổi."}</p>}
-    {schema ? <ComprehensiveFormPage key={initial.submission_uuid} initialAnswers={startingAnswers} schema={schema} compact identityVersion={record.identity_version} studyCode={record.study_code}
+    {schema ? <ComprehensiveFormPage key={initial.submission_uuid} initialAnswers={startingAnswers} schema={schema} compact identityVersion={record.identity_version} studyCode={record.study_code} validationRef={validationRef}
       readOnly={!editable} busy={busy} onDraftChange={changed} onSubmit={async (answers) => {latest.current=answers;await saveNow();}} submitLabel="Lưu thay đổi" /> : <p className="admin-loading" role="status">Đang tải phiếu…</p>}
   </>;
 };

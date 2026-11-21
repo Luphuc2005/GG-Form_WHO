@@ -3,6 +3,9 @@ import { Check, ChevronDown, FileText, Send, Trash2 } from "lucide-react";
 import type { ComprehensiveFormPageProps } from "./ComprehensiveFormPage";
 import { ClinicalField } from "../types/schema";
 import { matchesFieldCondition } from "../utils/fieldConditions";
+import { missingRequiredFields } from "../utils/requiredFields";
+import { useRequiredFieldNavigation } from "../hooks/useRequiredFieldNavigation";
+import { RequiredFieldsNotice } from "../components/RequiredFieldsNotice";
 import { RecordAnswers, workflowApi } from "../api/workflow";
 import "../styles/form-builder.css";
 import {
@@ -52,7 +55,9 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
   identityVersion = 2,
   studyCode,
   saveStatus,
+  validationRef,
 }) => {
+  const formRoot = useRef<HTMLDivElement>(null);
   const fields = schema.clinical_fields || [];
   const [form, setForm] = useState<Record<string, any>>(() => ({
     hospital_code: "",
@@ -119,6 +124,8 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     (matchesFieldCondition(f, form) || filled(form[f.id])) &&
     (f.active || filled(form[f.id]));
   const activeFields = fields.filter((f) => f.active && visible(f));
+  const required = useRequiredFieldNavigation(missingRequiredFields(schema, answers, identityVersion), formRoot, navigationRef,
+    section => { setActiveSection(section); setOpen(previous => ({...previous, [section]: true})); }, compact, validationRef);
   const count =
     activeFields.filter((f) => filled(form[f.id])).length +
     Number(Boolean(diagnosis)) +
@@ -146,6 +153,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (readOnly || busy) return;
+    if (!compact && !required.validate()) return;
     try {
       await onSubmit(answers);
     } catch (e) {
@@ -160,6 +168,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
       name: field.id,
       disabled,
       "aria-label": field.label,
+      "aria-required": field.active && field.required,
       "aria-describedby": field.help_text ? `hint-${field.id}` : undefined,
     };
     if (field.type === "select")
@@ -186,7 +195,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
         ? value
         : String(value).split(/,\s*/).filter(Boolean);
       return (
-        <div className="managed-checks" role="group" aria-label={field.label}>
+        <div id={`managed-${field.id}`} className="managed-checks" role="group" aria-label={field.label} aria-required={field.active && field.required} tabIndex={-1}>
           {[...new Set([...field.choices, ...values])].map((c) => (
             <label key={c}>
               <input
@@ -275,6 +284,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
   const iotaTotal = iotaEntered.reduce((sum, k) => sum + Number(form[k]), 0);
   return (
     <div
+      ref={formRoot}
       className={`form-container managed-form ${compact ? "admin-case-form" : "entry-form"}`}
     >
       {!compact && (
@@ -307,7 +317,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
               aria-valuemin={0} aria-valuemax={total} aria-valuenow={count}>
               <span style={{width: `${Math.min(100, count / total * 100)}%`}}/>
             </div>
-            <p>Các mục chưa có thông tin có thể để trống.</p>
+            <p>Các mục không có dấu * có thể để trống.</p>
           </div>
         </header>
       )}
@@ -339,6 +349,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
               {error || identityError}
             </p>
           )}
+          <RequiredFieldsNotice issues={required.issues} onFocus={required.focus}/>
           <section
             id="managed-identity"
             className="form-card entry-identity-card"
@@ -350,6 +361,8 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
                 Bệnh viện *
                 {identityVersion >= 2 ? (
                   <select
+                    id="managed-hospital_code"
+                    aria-required="true"
                     aria-label="Bệnh viện"
                     className="form-select"
                     disabled={readOnly || busy || Boolean(studyCode)}
@@ -365,6 +378,8 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
                   </select>
                 ) : (
                   <input
+                    id="managed-hospital_code"
+                    aria-required="true"
                     aria-label="Mã bệnh viện"
                     className="form-input"
                     disabled={readOnly || busy}
@@ -378,6 +393,8 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
                   <label>
                     Giai đoạn nghiên cứu *
                     <select
+                      id="managed-study_phase"
+                      aria-required="true"
                       aria-label="Giai đoạn nghiên cứu"
                       className="form-select"
                       disabled={readOnly || busy || Boolean(studyCode)}
@@ -403,6 +420,8 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
                 <label>
                   Mã đợt điều trị *
                   <input
+                    id="managed-encounter_code"
+                    aria-required="true"
                     aria-label="Mã đợt điều trị"
                     className="form-input"
                     disabled={readOnly || busy}
