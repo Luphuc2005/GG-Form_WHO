@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, FileText, Send, Trash2 } from "lucide-react";
 import type { ComprehensiveFormPageProps } from "./ComprehensiveFormPage";
 import { ClinicalField } from "../types/schema";
-import { SURGICAL_FINDINGS } from "../components/SurgicalProtocolFields";
+import { matchesFieldCondition } from "../utils/fieldConditions";
 import { RecordAnswers, workflowApi } from "../api/workflow";
 import "../styles/form-builder.css";
 import {
@@ -116,9 +116,7 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     if (!readOnly) onDraftChange(answers);
   }, [answers, onDraftChange, readOnly]);
   const visible = (f: ClinicalField) =>
-    (!f.show_when ||
-      f.show_values.includes(String(form[f.show_when] || "")) ||
-      filled(form[f.id])) &&
+    (matchesFieldCondition(f, form) || filled(form[f.id])) &&
     (f.active || filled(form[f.id]));
   const activeFields = fields.filter((f) => f.active && visible(f));
   const count =
@@ -130,14 +128,16 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     setError("");
     setForm((previous) => {
       const next = { ...previous, [id]: value };
-      if (SURGICAL_FINDINGS.some(finding => finding.id === id) && value !== "Có") {
-        next[`${id}_ghi_chu`] = "";
+      for (const field of fields) {
+        if (field.active && field.show_when === id && !matchesFieldCondition(field, next)) {
+          next[field.id] = field.type === "multiselect" ? [] : "";
+        }
       }
       if (filled(value) && next.missing_reasons) {
         next.missing_reasons = { ...next.missing_reasons };
         delete next.missing_reasons[id];
       }
-      if (id === "iota_malignant") next.sa_iota_adnex = value;
+      if (id === "iota_malignant" && fields.some((f) => f.id === id && f.type === "number")) next.sa_iota_adnex = value;
       if (id === "mri_dich_nang_t1w" || id === "mri_dich_nang_t2w")
         next.mri_dich_nang = `T1w: ${next.mri_dich_nang_t1w || ""}, T2w: ${next.mri_dich_nang_t2w || ""}`;
       return next;
@@ -270,7 +270,8 @@ export const ManagedFormPage: React.FC<ComprehensiveFormPageProps> = ({
     setForm(previous => Object.fromEntries(Object.keys(previous).map(key => [key, key === "missing_reasons" ? {} : multi.has(key) ? [] : ""])));
     setDiagnosis(""); setOther(""); setSecondDiagnosis(""); setSecondOther(""); setError("");
   };
-  const iotaEntered = IOTA.filter((k) => filled(form[k]));
+  const numericIota = IOTA.every((id) => fields.some((f) => f.id === id && f.type === "number"));
+  const iotaEntered = numericIota ? IOTA.filter((k) => filled(form[k])) : [];
   const iotaTotal = iotaEntered.reduce((sum, k) => sum + Number(form[k]), 0);
   return (
     <div

@@ -97,6 +97,7 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
   const [sectionFilter, setSectionFilter] = useState<string>("all");
   const [showMetaEditor, setShowMetaEditor] = useState(false);
   const [bulkChoicesMode, setBulkChoicesMode] = useState(false);
+  const [followupChoice, setFollowupChoice] = useState("");
   const [tab, setTab] = useState<"fields" | "who" | "preview" | "versions">(
     "fields",
   );
@@ -144,6 +145,7 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
   // Reset bulk choice editor when switching selected field
   useEffect(() => {
     setBulkChoicesMode(false);
+    setFollowupChoice("");
   }, [selected]);
 
   const fields = schema?.clinical_fields || [];
@@ -279,10 +281,16 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
   const field = fields.find((f) => f.id === selected);
   const fieldIndex = fields.findIndex((f) => f.id === selected);
   const activeFieldCount = fields.filter((f) => f.active).length;
-  const isSystemLockedType = Boolean(
-    state.schema.clinical_fields?.some((f) => f.id === field?.id),
-  );
   const isSoHs = field?.id === "so_hs";
+  const dependentFields = fields.filter((f) => f.show_when === selected);
+  const conditionParents = fields.filter(
+    (f) => f.id !== selected && f.active && !f.show_when &&
+      ["select", "multiselect"].includes(f.type),
+  );
+  const conditionParent = fields.find((f) => f.id === field?.show_when);
+  const followupValue = field?.choices.includes(followupChoice)
+    ? followupChoice
+    : field?.choices.includes("Có") ? "Có" : field?.choices[0] || "";
 
   const update = (patch: Partial<ClinicalField>) =>
     setSchema({
@@ -333,6 +341,50 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
     setQuery("");
   };
 
+  const addFollowup = (type: "textarea" | "number") => {
+    if (!field || !followupValue) return;
+    const id = `custom_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const prefix = type === "number" ? "Số lượng" : "Mô tả";
+    const baseLabel = `${prefix}: ${field.label}`.slice(0, 150);
+    let label = baseLabel;
+    let suffix = 2;
+    while (fields.some((f) => f.label.toLocaleLowerCase("vi") === label.toLocaleLowerCase("vi"))) {
+      label = `${baseLabel} (${suffix++})`;
+    }
+    const lastIndex = fields.reduce(
+      (last, f, i) => f.id === field.id || f.show_when === field.id ? i : last,
+      fieldIndex,
+    );
+    const next: ClinicalField = {
+      id, label, type, section: field.section, active: true,
+      required: false, export: true, choices: [], help_text: "",
+      min_value: type === "number" ? 0 : null, max_value: null,
+      show_when: field.id, show_values: [followupValue],
+    };
+    setSchema({ ...schema, clinical_fields: [
+      ...fields.slice(0, lastIndex + 1), next, ...fields.slice(lastIndex + 1),
+    ] });
+    setSelected(id);
+    setQuery("");
+    setSectionFilter(field.section);
+    setNotice(`Đã thêm ô ${type === "number" ? "số lượng" : "mô tả"}, chỉ hiện khi chọn “${followupValue}”. Bạn có thể đổi tên và kiểu nhập bên dưới.`);
+  };
+
+  const changeFieldType = (type: ClinicalField["type"]) => {
+    if (!field) return;
+    const choiceType = ["select", "multiselect"].includes(type);
+    setSchema({ ...schema, clinical_fields: fields.map((f) => {
+      if (f.id === field.id) return {
+        ...f, type, choices: choiceType ? (f.choices.length ? f.choices : ["Lựa chọn 1"]) : [],
+      };
+      if (!choiceType && f.show_when === field.id) return { ...f, show_when: null, show_values: [] };
+      return f;
+    }) });
+    if (!choiceType && dependentFields.length) {
+      setNotice("Đã chuyển các câu hỏi phụ sang luôn hiển thị vì câu hỏi chính không còn là kiểu lựa chọn.");
+    }
+  };
+
   const moveField = (direction: number) => {
     const list = [...fields];
     const i = list.findIndex((f) => f.id === selected);
@@ -344,9 +396,22 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
 
   const updateChoiceAt = (index: number, value: string) => {
     if (!field) return;
+    const previous = field.choices[index];
     const next = [...field.choices];
     next[index] = value;
-    update({ choices: next });
+    setSchema({
+      ...schema,
+      clinical_fields: fields.map((item) => {
+        if (item.id === field.id) return { ...item, choices: next };
+        if (item.show_when === field.id) {
+          return {
+            ...item,
+            show_values: item.show_values.map((choice) => choice === previous ? value : choice),
+          };
+        }
+        return item;
+      }),
+    });
   };
 
   const removeChoiceAt = (index: number) => {
@@ -825,10 +890,10 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                       <label>
                         <span>
                           Kiểu nhập liệu
-                          {isSystemLockedType && (
+                          {isSoHs && (
                             <span
                               className="builder-inline-lock"
-                              title="Không đổi kiểu của câu hỏi đã xuất bản"
+                              title="Số hồ sơ dùng văn bản để giữ số 0 ở đầu"
                             >
                               <Lock size={11} /> Cố định
                             </span>
@@ -836,19 +901,8 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                         </span>
                         <select
                           value={field.type}
-                          disabled={isSystemLockedType}
-                          onChange={(e) =>
-                            update({
-                              type: e.target.value as ClinicalField["type"],
-                              choices: ["select", "multiselect"].includes(
-                                e.target.value,
-                              )
-                                ? field.choices.length
-                                  ? field.choices
-                                  : ["Lựa chọn 1"]
-                                : [],
-                            })
-                          }
+                          disabled={isSoHs}
+                          onChange={(e) => changeFieldType(e.target.value as ClinicalField["type"])}
                         >
                           {Object.entries(TYPE_NAMES).map(([k, v]) => (
                             <option key={k} value={k}>
@@ -959,6 +1013,32 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                         Các phiếu đã nhập trước đó vẫn giữ nguyên lựa chọn theo
                         phiên bản cũ.
                       </small>
+                    </div>
+                  )}
+
+                  {["select", "multiselect"].includes(field.type) && !field.show_when && (
+                    <div className="builder-editor-block">
+                      <h3 className="builder-block-title">Câu hỏi phụ theo lựa chọn</h3>
+                      <label>
+                        Thêm ô nhập khi người dùng chọn
+                        <select value={followupValue} onChange={(e) => setFollowupChoice(e.target.value)}>
+                          {field.choices.map((choice, index) => <option key={index} value={choice}>{choice}</option>)}
+                        </select>
+                      </label>
+                      <div className="builder-followup-actions">
+                        <button type="button" className="admin-secondary" disabled={!followupValue} onClick={() => addFollowup("textarea")}>
+                          <Plus size={14} /> Thêm ô mô tả
+                        </button>
+                        <button type="button" className="admin-secondary" disabled={!followupValue} onClick={() => addFollowup("number")}>
+                          <Plus size={14} /> Thêm ô số lượng
+                        </button>
+                      </div>
+                      {dependentFields.map((child) => (
+                        <button key={child.id} type="button" className="builder-followup-link" onClick={() => { setSelected(child.id); setQuery(""); setSectionFilter(child.section); }}>
+                          <Pencil size={13} /> {child.label} — khi chọn {child.show_values.join(", ")}{!child.active && " (đang ẩn)"}
+                        </button>
+                      ))}
+                      <small className="builder-block-note">Ví dụ: chọn “Có” thì hiện ô mô tả có như thế nào hoặc có bao nhiêu.</small>
                     </div>
                   )}
 
@@ -1084,20 +1164,39 @@ export const FormBuilderPage: React.FC<{ onBack: () => void }> = ({
                       </label>
                     </div>
 
-                    {field.show_when && (
-                      <div className="builder-condition-pill">
-                        <Info size={14} />
-                        <span>
-                          Câu hỏi điều kiện: chỉ hiển thị khi{" "}
-                          <strong>
-                            {fields.find((f) => f.id === field.show_when)
-                              ?.label || field.show_when}
-                          </strong>{" "}
-                          có giá trị:{" "}
-                          <strong>{field.show_values.join(", ")}</strong>.
-                        </span>
+                  </div>
+
+                  <div className="builder-editor-block">
+                    <h3 className="builder-block-title">Điều kiện hiển thị</h3>
+                    <label>
+                      Chỉ hiển thị câu hỏi này khi
+                      <select
+                        value={field.show_when || ""}
+                        disabled={isSoHs || dependentFields.length > 0}
+                        onChange={(e) => {
+                          const parent = fields.find((f) => f.id === e.target.value);
+                          update({ show_when: parent?.id || null, show_values: parent ? [parent.choices.includes("Có") ? "Có" : parent.choices[0]] : [] });
+                        }}
+                      >
+                        <option value="">Luôn hiển thị</option>
+                        {conditionParent && !conditionParents.some((f) => f.id === conditionParent.id) && <option value={conditionParent.id}>{conditionParent.label}</option>}
+                        {conditionParents.map((parent) => <option key={parent.id} value={parent.id}>{parent.label}</option>)}
+                      </select>
+                    </label>
+                    {field.show_when && conditionParent && (
+                      <div className="builder-condition-values" role="group" aria-label="Giá trị làm hiện câu hỏi phụ">
+                        <span>Khi chọn một trong các giá trị:</span>
+                        {[...new Set([...conditionParent.choices, ...field.show_values])].map((choice) => (
+                          <label key={choice}>
+                            <input type="checkbox" checked={field.show_values.includes(choice)} onChange={(e) => update({ show_values: e.target.checked ? [...field.show_values, choice] : field.show_values.filter((v) => v !== choice) })} />
+                            {choice}{!conditionParent.choices.includes(choice) && " (đã bỏ khỏi lựa chọn)"}
+                          </label>
+                        ))}
                       </div>
                     )}
+                    <small className="builder-block-note">
+                      {dependentFields.length > 0 ? "Câu hỏi này đang có câu hỏi phụ; hỗ trợ điều kiện một cấp." : "Ô bắt buộc chỉ được yêu cầu khi điều kiện hiển thị thỏa mãn."}
+                    </small>
                   </div>
                 </section>
               ) : (
