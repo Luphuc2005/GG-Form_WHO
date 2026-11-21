@@ -25,9 +25,11 @@ SURGERY_FIELDS = ("pt_so_luong_u", *(key for pair in SURGERY_DETAILS.items() for
 
 def validate_clinical(data: dict, final: bool = False, study_identity: bool = False, previous_data: dict | None = None, schema=None):
     contract = CONTRACT
+    managed_fields = {}
     if schema is not None and schema.clinical_fields is not None:
         from app.services.form_configuration import clinical_contract_for
         contract = clinical_contract_for(schema)
+        managed_fields = {field.id: field for field in schema.clinical_fields}
     multi_fields = set(contract["multi_choices"])
     errors = []
     previous_data = previous_data or {}
@@ -60,12 +62,18 @@ def validate_clinical(data: dict, final: bool = False, study_identity: bool = Fa
         elif isinstance(data.get(key), list) and any(v not in contract["multi_choices"][key] for v in data[key]):
             errors.append(f"{key}: lựa chọn không có trong danh mục")
     for parent, detail in SURGERY_DETAILS.items():
+        if detail in managed_fields:
+            continue  # Versioned conditions below own these fields in managed forms.
         if data.get(detail) and data.get(parent) != "Có" and (
             data.get(detail) != previous_data.get(detail) or data.get(parent) != previous_data.get(parent)
         ):
             errors.append(f"{detail}: chỉ nhập mô tả khi chọn Có")
     values = {}
     for key in NUMBERS | {"nam_sinh", "nam_kham"}:
+        if key in managed_fields and managed_fields[key].type != "number":
+            continue
+        if key == "sa_iota_adnex" and "iota_malignant" in managed_fields and managed_fields["iota_malignant"].type != "number":
+            continue
         value = data.get(key)
         if value in (None, ""):
             continue
@@ -87,7 +95,7 @@ def validate_clinical(data: dict, final: bool = False, study_identity: bool = Fa
     for full, solid in (("sa_kich_thuoc_u", "sa_kich_thuoc_phan_dac"), ("mri_kich_thuoc_u", "mri_kich_thuoc_phan_dac")):
         if full in values and solid in values and values[solid] > values[full]:
             errors.append(f"{solid}: lớn hơn kích thước toàn bộ u, cần đối chiếu hồ sơ")
-    para = str(data.get("para") or "")
+    para = str(data.get("para") or "") if "para" not in managed_fields or managed_fields["para"].type in ("text", "textarea") else ""
     if para and (len(para) != 4 or not para.isascii() or not para.isdigit()):
         errors.append("para: cần đúng 4 chữ số")
     for key in ("treatment_date",):
@@ -100,7 +108,7 @@ def validate_clinical(data: dict, final: bool = False, study_identity: bool = Fa
     # Study-specific entry convention: all SIX displayed fields total 100%.
     # This is not the standard ADNEX parent/subtype probability relationship.
     # Drafts may still contain incomplete measurements while users are typing.
-    if final and any(k in values for k in IOTA):
+    if final and all(k not in managed_fields or managed_fields[k].type == "number" for k in IOTA) and any(k in values for k in IOTA):
         if not all(k in values for k in IOTA):
             errors.append("IOTA: cần nhập đủ 6 ô tỷ lệ khi có kết quả; nhập 0 nếu giá trị thực sự bằng 0")
         else:
@@ -117,13 +125,19 @@ def validate_clinical(data: dict, final: bool = False, study_identity: bool = Fa
             if not isinstance(value, str) or not value.strip() or len(value.strip()) > 100:
                 errors.append(f"{key}: {label} là bắt buộc, tối đa 100 ký tự")
     if schema is not None and schema.clinical_fields is not None:
+        from app.services.form_configuration import matches_field_condition
         for field in schema.clinical_fields:
             value = data.get(field.id)
-            visible = not field.show_when or str(data.get(field.show_when, "")) in field.show_values
+            visible = matches_field_condition(field, data)
             if final and field.active and visible and field.required and (value in (None, "", []) or isinstance(value, str) and not value.strip()):
                 errors.append(f"{field.id}: cần nhập thông tin bắt buộc")
             if value in (None, "", []):
                 continue
+            if field.active and not visible and (
+                value != previous_data.get(field.id)
+                or data.get(field.show_when) != previous_data.get(field.show_when)
+            ):
+                errors.append(f"{field.id}: chỉ nhập khi điều kiện hiển thị thỏa mãn")
             if field.type == "number":
                 try:
                     number = Decimal(str(value))

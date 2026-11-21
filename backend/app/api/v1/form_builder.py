@@ -14,7 +14,7 @@ from app.models.submission import Submission, EXPORTABLE_STATES
 from app.repositories.form_repo import FormRepository
 from app.schemas.form import FormSchemaDefinition
 from app.services.auth_svc import AuthService
-from app.services.form_configuration import FORM_KEY, SECTIONS, all_versions, effective_schema, validate_configuration, export_definitions
+from app.services.form_configuration import FORM_KEY, SECTIONS, all_versions, effective_schema, validate_configuration, export_definitions, organize_export_definitions
 from app.core.exceptions import ConflictException, NotFoundException
 
 router = APIRouter(prefix="/admin/form-builder", tags=["Form configuration"])
@@ -92,7 +92,8 @@ def preview_configuration(payload: ConfigurationChange, db: Session = Depends(ge
     by_key = {d["key"]: d for d in definitions}
     for field in payload.definition.clinical_fields:
         by_key[field.id] = {"key": field.id, "label": field.label, "export": field.export}
-    return {"schema": payload.definition, "changes": changes, "columns": [d for d in by_key.values() if d["export"] and d["key"] != "submission_uuid"],
+    columns = organize_export_definitions(list(by_key.values()), payload.definition.clinical_fields)
+    return {"schema": payload.definition, "changes": changes, "columns": [d for d in columns if d["export"] and d["key"] != "submission_uuid"],
             "message": "Phiếu cũ giữ phiên bản đã nhập. Trường mới để trống trên phiếu cũ. Excel tải mới dùng bộ cột mới; Sheet cập nhật qua hàng đợi."}
 
 

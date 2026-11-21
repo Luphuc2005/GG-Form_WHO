@@ -86,8 +86,8 @@ def validate_configuration(schema, previous, history):
         if not label or field.label.startswith(("=", "+", "-", "@")) or label in labels or (label in historical_labels and historical_labels[label] != field.id):
             errors.append(f"{field.id}: tên câu hỏi trống, trùng hoặc từng thuộc câu hỏi khác.")
         labels.add(label)
-        if field.id in old and field.type != old[field.id].type:
-            errors.append(f"{field.label}: giữ nguyên kiểu dữ liệu của mã đã có; tạo câu hỏi mới nếu cần đổi kiểu.")
+        if field.id == "so_hs" and field.type != "text":
+            errors.append("Số hồ sơ phải dùng văn bản ngắn để giữ nguyên mã và số 0 ở đầu.")
         if field.id == "so_hs" and (not field.active or not field.required or not field.export):
             errors.append("Số hồ sơ phải được bật, bắt buộc và có trong dữ liệu xuất.")
         if field.id in PROTECTED and field.id in old:
@@ -103,8 +103,20 @@ def validate_configuration(schema, previous, history):
             errors.append(f"{field.label}: giá trị nhỏ nhất lớn hơn giá trị lớn nhất.")
         if field.show_when:
             parent = current.get(field.show_when)
-            if not parent or parent.id == field.id or parent.show_when or not field.show_values:
+            old_field, old_parent = old.get(field.id), old.get(field.show_when)
+            # Preserve older published conditions whose trigger was already retired.
+            legacy_values = (set(old_field.show_values) - set(old_parent.choices)
+                             if old_field and old_parent and old_field.show_when == field.show_when else set())
+            if (not parent or parent.id == field.id or parent.show_when
+                    or parent.type not in ("select", "multiselect") or not field.show_values
+                    or len(field.show_values) != len(set(field.show_values))
+                    or field.active and any(value not in parent.choices and value not in legacy_values for value in field.show_values)
+                    or field.active and not parent.active):
                 errors.append(f"{field.label}: điều kiện hiển thị không hợp lệ (chỉ hỗ trợ một cấp).")
+        elif field.show_values:
+            errors.append(f"{field.label}: cần chọn câu hỏi làm điều kiện hiển thị.")
+        if field.id == "so_hs" and field.show_when:
+            errors.append("Số hồ sơ phải luôn hiển thị.")
     pathology = next((f for f in schema.fields if f.id == "pathology"), None)
     iota_flags = {field.active for field in fields if field.id.startswith("iota_")}
     if len(iota_flags) > 1:
@@ -125,18 +137,65 @@ def export_definitions(db):
     result["submission_uuid"]["hidden"] = True
     result["study_code"]["aliases"].append("Mã nghiên cứu")
     result["who_diagnosis_1"]["aliases"].append("Phân loại Giải phẫu bệnh theo WHO")
+    # Legacy records also collect these fields before a managed form is
+    # published. Recognize their columns instead of failing every row update.
+    for field in baseline_fields():
+        if field.export and field.id not in result:
+            result[field.id] = {"key": field.id, "label": field.label,
+                                "aliases": [field.label], "export": True, "type": field.type}
     managed = False
+    latest_fields = []
     for version in versions:
         schema = FormSchemaDefinition.model_validate(version.schema_json)
         if schema.clinical_fields is None:
             continue
         managed = True
+        latest_fields = schema.clinical_fields
         for field in schema.clinical_fields:
             item = result.setdefault(field.id, {"key": field.id, "label": field.label, "aliases": [], "export": field.export})
             if field.label not in item["aliases"]:
                 item["aliases"].append(field.label)
             item.update(label=field.label, export=field.export, type=field.type)
-    return list(result.values()), managed
+    if managed:
+        return organize_export_definitions(list(result.values()), latest_fields), True
+    return list(result.values()), False
+
+
+def organize_export_definitions(definitions, fields):
+    """Keep identifiers first and clinical columns beside their form section."""
+    by_key = {item["key"]: item for item in definitions}
+    clinical = {field.id: field for field in fields}
+    first = ["submission_uuid", "study_code", "created_at", "so_hs", "ho_ten", "hospital_code", "study_phase"]
+    who = ["who_diagnosis_1", "who_diagnosis_2", "who_icdo_code", "classification"]
+    hidden = {"submission_uuid", "encounter_code", "hospital_cancer_center", "mri_dich_nang"}
+    ordered = []
+    used = set()
+
+    def add(key, section):
+        if key in used or key not in by_key:
+            return
+        item = {**by_key[key], "section": section}
+        if key in hidden:
+            item["hidden"] = True
+        ordered.append(item)
+        used.add(key)
+
+    for key in first:
+        add(key, "identity")
+    for section in SECTIONS:
+        for field in fields:
+            if field.section == section:
+                add(field.id, section)
+    for key in who:
+        add(key, "who")
+    for item in definitions:
+        key = item["key"]
+        # A code update must not silently enable new clinical columns absent
+        # from the published managed schema. Keep aliases for safe migration.
+        if key in CONTRACT["fields"] and key not in clinical and key not in SYSTEM_FIELDS:
+            item["export"] = False
+        add(key, "system")
+    return ordered
 
 
 def clinical_contract_for(schema):
@@ -153,3 +212,11 @@ def clinical_contract_for(schema):
     # This legacy aggregate is derived from T1W/T2W, never entered directly.
     contract["retired_fields"] = [f.id for f in fields if not f.active and f.id != "mri_dich_nang"]
     return contract
+
+
+def matches_field_condition(field, data):
+    if not field.show_when:
+        return True
+    value = data.get(field.show_when)
+    values = value if isinstance(value, list) else [value]
+    return any(str(item) in field.show_values for item in values)
