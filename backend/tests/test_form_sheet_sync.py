@@ -13,6 +13,24 @@ from app.models.submission import Submission
 import uuid
 
 
+def test_retry_sheet_requeues_existing_rows_and_removals_without_losing_inflight_work(db_session):
+    from app.api.v1.form_builder import retry_sheet
+    form = db_session.query(FormVersion).first()
+    records = []
+    for state, sync in (("submitted", "synced"), ("trashed", "removed"), ("cancelled", "failed"), ("draft", "not_requested"), ("approved", "syncing")):
+        record = Submission(submission_uuid=uuid.uuid4(), form_version_id=form.id, answers={},
+            classification="benign", payload_hash="synthetic", workflow_status=state, sync_status=sync, revision=4, synced_revision=3)
+        db_session.add(record); records.append(record)
+    db_session.commit()
+    result = retry_sheet(db_session, None)
+    assert result["queued_records"] == 3
+    for record in records:
+        db_session.refresh(record)
+    assert [record.sync_status for record in records] == ["pending", "pending", "pending", "not_requested", "syncing"]
+    assert all(record.synced_revision == 3 for record in records)
+    assert db_session.get(FormSheetJob, FORM_KEY).target_version == form.version
+
+
 def test_schema_job_is_durable_without_any_patient_records_and_retries(monkeypatch):
     engine=create_engine("sqlite:///:memory:");Base.metadata.create_all(engine)
     factory=sessionmaker(bind=engine,expire_on_commit=False)

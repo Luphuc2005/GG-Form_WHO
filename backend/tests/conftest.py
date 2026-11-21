@@ -3,7 +3,7 @@ import json
 import pytest
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -32,8 +32,14 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 @pytest.fixture(scope="session", autouse=True)
 def setup_database():
     Base.metadata.create_all(bind=engine)
+    from app.services.deployment_checks import expected_revision
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"))
+        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES (:revision)"), {"revision": expected_revision()})
     yield
     Base.metadata.drop_all(bind=engine)
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE alembic_version"))
 
 
 @pytest.fixture(scope="function")

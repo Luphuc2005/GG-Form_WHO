@@ -6,10 +6,9 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from sqlalchemy import select
 import app.models  # Register models without starting the web application.
 from app.database import SessionLocal
-from app.models.export_job import ExportJob
+from app.services.deployment_checks import verify_current_schema
 from app.services.record_sync import sync_loop
 from app.services.export_jobs import export_loop
 
@@ -18,7 +17,7 @@ HEARTBEAT = Path(os.environ.get("WORKER_HEARTBEAT_PATH", str(Path(tempfile.gette
 
 def heartbeat():
     with SessionLocal() as db:
-        db.execute(select(ExportJob.id).limit(1))
+        verify_current_schema(db)
     HEARTBEAT.write_text(str(time.time()), encoding="ascii")
 
 

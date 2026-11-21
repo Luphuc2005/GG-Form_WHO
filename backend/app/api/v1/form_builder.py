@@ -137,6 +137,13 @@ def retry_sheet(db: Session = Depends(get_db), user=Depends(AuthService.require_
     if not job:
         db.add(FormSheetJob(form_key=FORM_KEY, target_version=current.version, status="pending"))
     else:
+        job.target_version = current.version
         job.status, job.attempts, job.error = "pending", 0, None
+    # Replacing a legacy deployment or restoring a missing column also needs
+    # record readback. Verifying headers alone cannot repopulate existing rows.
+    result = db.execute(update(Submission).where(
+        Submission.workflow_status.in_((*EXPORTABLE_STATES, "trashed", "cancelled")),
+        Submission.sync_status != "syncing",
+    ).values(sync_status="pending", sync_attempts=0, sync_error=None))
     db.commit()
-    return {"status": "pending"}
+    return {"status": "pending", "queued_records": result.rowcount}
