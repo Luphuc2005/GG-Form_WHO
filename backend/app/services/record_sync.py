@@ -113,7 +113,8 @@ def process_one():
 async def sync_loop():
     while True:
         try:
-            more = await asyncio.to_thread(process_one)
+            from app.services.batch_sync import process_batch
+            more = await asyncio.to_thread(process_batch, SessionLocal, get_settings())
             from app.services.sheet_cleanup import process_cleanup_job
             more = await asyncio.to_thread(process_cleanup_job, SessionLocal, get_settings()) or more
             from app.services.form_sheet_sync import process_schema_job
