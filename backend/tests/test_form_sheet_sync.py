@@ -23,10 +23,11 @@ def test_retry_sheet_requeues_existing_rows_and_removals_without_losing_inflight
         db_session.add(record); records.append(record)
     db_session.commit()
     result = retry_sheet(db_session, None)
-    assert result["queued_records"] == 3
+    assert result["queued_records"] == 4
     for record in records:
         db_session.refresh(record)
     assert [record.sync_status for record in records] == ["pending", "pending", "pending", "not_requested", "syncing"]
+    assert records[-1].sync_attempts == 0
     assert all(record.synced_revision == 3 for record in records)
     assert db_session.get(FormSheetJob, FORM_KEY).target_version == form.version
 

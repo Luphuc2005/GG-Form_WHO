@@ -133,7 +133,10 @@ def process_batch(factory=SessionLocal, settings=None):
             for sub, _ in claimed:
                 outcomes.setdefault(str(sub.submission_uuid), {"sync_status": "failed", "sync_error": legacy.sync_error_message(error)})
         table = Submission.__table__
-        changed = table.c.revision != bindparam("_attempt_revision")
+        # Every claim increments attempts before sending. A concurrent form
+        # publication or explicit retry resets it to zero while keeping the
+        # lease, requesting another pass even when answers/revision did not change.
+        changed = or_(table.c.revision != bindparam("_attempt_revision"), table.c.sync_attempts == 0)
         complete = table.update().where(table.c.id == bindparam("_record_id"), table.c.sync_status == "syncing").values(
             sync_status=case((changed, "pending"), else_=bindparam("_result_status")),
             sync_error=case((changed, None), else_=bindparam("_result_error")),

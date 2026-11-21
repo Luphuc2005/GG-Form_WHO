@@ -3,7 +3,7 @@ import asyncio
 import logging
 import urllib.error
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, update, or_, case
+from sqlalchemy import select, update, or_, and_, case
 from app.database import SessionLocal
 from app.config import get_settings
 from app.models.submission import Submission, EXPORTABLE_STATES
@@ -102,10 +102,15 @@ def process_one():
             # Do not leak hospital data, webhook URLs or credentials into the browser/log.
             result = {"sync_status": "failed", "sync_error": sync_error_message(error)}
             log.warning("Sheet sync failed for record %s (%s), attempt will be retried.", sub_id, type(error).__name__)
-        db.refresh(sub)
-        if sub.revision != revision:
-            result = {"sync_status": "pending", "sync_error": None, "sync_attempts": 0}
-        db.execute(update(Submission).where(Submission.id == sub_id, Submission.sync_status == "syncing").values(**result))
+        # Evaluate requests atomically with completion, including a form change
+        # or retry that reset attempts while this record kept its active lease.
+        changed = or_(Submission.revision != revision, Submission.sync_attempts == 0)
+        db.execute(update(Submission).where(Submission.id == sub_id, Submission.sync_status == "syncing").values(
+            sync_status=case((changed, "pending"), else_=result["sync_status"]),
+            sync_error=case((changed, None), else_=result.get("sync_error")),
+            sync_attempts=case((changed, 0), else_=Submission.sync_attempts),
+            synced_revision=case((and_(~changed, "synced_revision" in result), revision), else_=Submission.synced_revision),
+        ), execution_options={"synchronize_session": False})
         db.commit()
     return True
 

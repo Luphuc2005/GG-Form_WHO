@@ -1,6 +1,7 @@
 """Revision and retry contracts for bounded modern Sheet batches."""
 import json
 import uuid
+import pytest
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from app.models.submission import Submission
@@ -76,6 +77,27 @@ def modern(sync_env, monkeypatch, count=1):
     return factory, destination, key, config, remote
 
 
+def inflight(sync_env, monkeypatch, mode):
+    """Run the real queue path and inject an API call after destination writes."""
+    from types import SimpleNamespace
+    from app.services import record_sync
+    if mode == "batch":
+        factory, destination, key, config, remote = modern(sync_env, monkeypatch)
+        return factory, destination, key, remote, lambda: worker.process_batch(factory, config)
+    factory, destination, key, _ = sync_env
+    remote = SimpleNamespace(on_write=None)
+
+    def open(request, timeout):
+        response = destination.open(request, timeout)
+        if "row" in json.loads(request.data) and remote.on_write:
+            callback, remote.on_write = remote.on_write, None
+            callback()
+        return response
+
+    monkeypatch.setattr(sheets.urllib.request, "urlopen", open)
+    return factory, destination, key, remote, record_sync.process_one
+
+
 def test_large_queue_uses_bounded_batches_and_never_reads_full_table(sync_env, monkeypatch):
     factory, destination, _, config, remote = modern(sync_env, monkeypatch, 205)
     assert worker.process_batch(factory, config)
@@ -119,6 +141,67 @@ def test_new_revision_during_batch_is_queued_for_next_pass(sync_env, monkeypatch
         assert db.get(Submission,key).sync_status == "pending"
     assert worker.process_batch(factory, config)
     assert len(destination.rows) == 1 and "SYNTHETIC-NEW" in destination.rows[0]
+
+
+@pytest.mark.parametrize("mode", ["batch", "legacy"])
+def test_form_publication_during_sync_requeues_the_inflight_record(sync_env, monkeypatch, mode):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from app.api.v1.form_builder import ConfigurationChange, publish_configuration
+    from app.schemas.form import ClinicalFieldSchema, FormSchemaDefinition
+    from app.services.form_configuration import effective_schema
+
+    factory, destination, key, remote, process = inflight(sync_env, monkeypatch, mode)
+    with factory() as db:
+        sub = db.get(Submission, key)
+        sub.answers = {"clinical_data": {"so_hs": "SYNTHETIC", "custom_score": "7"}}
+        schema = effective_schema(sub.form_version.schema_json)
+        template = Path(__file__).resolve().parents[2] / "form-definitions/ovarian-pathology-v1.json"
+        schema.fields = FormSchemaDefinition.model_validate_json(template.read_text(encoding="utf-8")).fields
+        schema.clinical_fields.append(ClinicalFieldSchema(id="custom_score", label="Điểm thử", type="number", export=False))
+        sub.form_version.schema_json = schema.model_dump(mode="json")
+        db.commit()
+
+    def publish():
+        with factory() as db:
+            schema = effective_schema(db.get(Submission, key).form_version.schema_json)
+            next(field for field in schema.clinical_fields if field.id == "custom_score").export = True
+            publish_configuration(ConfigurationChange(base_version=1, schema=schema), db, SimpleNamespace(username="synthetic"))
+
+    remote.on_write = publish
+    assert process()
+    with factory() as db:
+        assert db.get(Submission, key).sync_status == "pending"
+    assert process()
+    assert len(destination.rows) == 1
+    assert destination.rows[0][destination.headers.index("Điểm thử")] == "7"
+    with factory() as db:
+        assert db.get(Submission, key).sync_status == "synced"
+
+
+@pytest.mark.parametrize("mode", ["batch", "legacy"])
+def test_explicit_retry_during_sync_is_not_lost_on_completion(sync_env, monkeypatch, mode):
+    from app.api.v1.form_builder import retry_sheet
+    factory, destination, key, remote, process = inflight(sync_env, monkeypatch, mode)
+    with factory() as db:
+        db.get(Submission, key).synced_revision = 2
+        db.commit()
+
+    def retry():
+        with factory() as db:
+            assert retry_sheet(db, None)["queued_records"] == 1
+            assert db.get(Submission, key).sync_status == "syncing"
+
+    remote.on_write = retry
+    assert process()
+    with factory() as db:
+        sub = db.get(Submission, key)
+        assert sub.sync_status == "pending" and sub.synced_revision == 2
+    assert process()
+    assert len(destination.rows) == 1
+    with factory() as db:
+        sub = db.get(Submission, key)
+        assert sub.sync_status == "synced" and sub.synced_revision == sub.revision
 
 
 def test_removal_bypasses_schema_failure_and_is_prioritized(sync_env, monkeypatch):

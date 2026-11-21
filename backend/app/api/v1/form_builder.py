@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import update, delete
+from sqlalchemy import update, delete, case
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -121,7 +121,11 @@ def publish_configuration(payload: ConfigurationChange, db: Session = Depends(ge
         job.target_version, job.status, job.attempts, job.error = schema.version, "pending", 0, None
     else:
         db.add(FormSheetJob(form_key=FORM_KEY, target_version=schema.version, status="pending"))
-    db.execute(update(Submission).where(Submission.workflow_status.in_(EXPORTABLE_STATES), Submission.sync_status != "syncing").values(sync_status="pending", sync_attempts=0, sync_error=None))
+    # Resetting the attempt count also requests another pass for claimed rows.
+    # Keep their lease until the worker finishes so two writers cannot overlap.
+    db.execute(update(Submission).where(Submission.workflow_status.in_(EXPORTABLE_STATES)).values(
+        sync_status=case((Submission.sync_status == "syncing", "syncing"), else_="pending"),
+        sync_attempts=0, sync_error=None))
     try:
         db.commit()
     except IntegrityError:
@@ -143,7 +147,7 @@ def retry_sheet(db: Session = Depends(get_db), user=Depends(AuthService.require_
     # record readback. Verifying headers alone cannot repopulate existing rows.
     result = db.execute(update(Submission).where(
         Submission.workflow_status.in_((*EXPORTABLE_STATES, "trashed", "cancelled")),
-        Submission.sync_status != "syncing",
-    ).values(sync_status="pending", sync_attempts=0, sync_error=None))
+    ).values(sync_status=case((Submission.sync_status == "syncing", "syncing"), else_="pending"),
+             sync_attempts=0, sync_error=None))
     db.commit()
     return {"status": "pending", "queued_records": result.rowcount}
