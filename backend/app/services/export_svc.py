@@ -182,19 +182,24 @@ def infer_classification(pathology_data: dict, current_classification: Optional[
 
 class ExportService:
     @classmethod
-    def xlsx_file(cls, db: Session):
+    def xlsx_file(cls, db: Session, output=None, on_progress=None):
         from tempfile import SpooledTemporaryFile
         from openpyxl import Workbook
         from openpyxl.cell import WriteOnlyCell
-        output = SpooledTemporaryFile(max_size=8 * 1024 * 1024)
+        if output is None:
+            output = SpooledTemporaryFile(max_size=8 * 1024 * 1024)
         workbook = Workbook(write_only=True)
         sheet = workbook.create_sheet("Phiếu nghiên cứu")
         sheet.freeze_panes = "A2"
         columns = cls.get_columns_for_database(db, include_internal=False)
         sheet.append([label for _, label, _ in columns])
+        catalogs = {}
+        count = 0
         for sub in SubmissionRepository.stream_all(db):
-            schema = FormSchemaDefinition.model_validate(sub.form_version.schema_json)
-            labels, codes = cls._build_maps(schema)
+            if sub.form_version_id not in catalogs:
+                schema = FormSchemaDefinition.model_validate(sub.form_version.schema_json)
+                catalogs[sub.form_version_id] = cls._build_maps(schema)
+            labels, codes = catalogs[sub.form_version_id]
             values = cls._flatten_submission_to_row(sub, columns, labels, codes)
             cells = []
             for (key, _, _), value in zip(columns, values):
@@ -205,7 +210,12 @@ class ExportService:
                     cell.data_type = "s"  # Literal text, including leading zeros and formula-like names.
                 cells.append(cell)
             sheet.append(cells)
+            count += 1
+            if on_progress and count % 500 == 0:
+                on_progress(count)
         workbook.save(output)
+        if on_progress:
+            on_progress(count)
         output.seek(0)
         return output
 
@@ -227,13 +237,9 @@ class ExportService:
 
     @staticmethod
     def numeric_labels(db):
-        from app.services.clinical_validation import NUMBERS
-        from app.services.form_configuration import all_versions
-        keys = set(NUMBERS)
-        for version in all_versions(db):
-            schema = FormSchemaDefinition.model_validate(version.schema_json)
-            keys.update(f.id for f in schema.clinical_fields or [] if f.type == "number")
-        return {label for key, label, _ in ExportService.get_columns_for_database(db) if key in keys}
+        from app.services.form_configuration import export_definitions
+        definitions, _ = export_definitions(db)
+        return {item["label"] for item in definitions if item["export"] and item.get("type") == "number"}
 
     @classmethod
     def stream_csv(

@@ -5,13 +5,21 @@
 Đăng nhập bằng tài khoản có vai trò **admin**, mở **Quản lý biểu mẫu** ở thanh công cụ hoặc `/admin/form-builder`. Bác sĩ vẫn xem/sửa bệnh án; chỉ admin được thay cấu trúc thu thập dữ liệu.
 
 1. Chọn câu hỏi để đổi tên, hướng dẫn, nhóm hiển thị, danh sách lựa chọn, yêu cầu bắt buộc hoặc bật/tắt cột xuất. **Thêm câu hỏi** hỗ trợ văn bản ngắn/dài, số, ngày, chọn một và chọn nhiều.
-2. Mã câu hỏi được cấp tự động, giữ nguyên qua các lần đổi tên. Câu hỏi đã công bố giữ nguyên kiểu dữ liệu; muốn đổi kiểu, tạo câu hỏi mới và ngừng dùng câu cũ.
+2. Mã câu hỏi được cấp tự động, giữ nguyên qua các lần đổi tên hoặc đổi kiểu nhập liệu. Có thể đổi kiểu cả câu hỏi đã công bố; thay đổi áp dụng khi xuất bản phiên bản mới, phiếu cũ vẫn dùng đúng kiểu của phiên bản đã nhập. Riêng Số hồ sơ luôn dùng văn bản ngắn để giữ mã và số 0 ở đầu.
 3. **Lưu nháp** lưu cấu hình trên máy chủ, không thay form đang dùng. Bản nháp được chia sẻ giữa các admin; nếu người khác sửa/xuất bản trước, hệ thống báo xung đột thay vì ghi đè.
 4. **Kiểm tra & xem trước** kiểm tra cấu hình, liệt kê thay đổi, hiển thị bộ cột xuất và cho nhập thử trên form. Bản xem trước không tạo bệnh án.
 5. **Xuất bản phiên bản mới** áp dụng cho phiếu được tạo sau đó. Phiếu đã tạo, kể cả nháp đang nhập, tiếp tục sử dụng phiên bản đã gắn với phiếu.
 6. Tab **Phiên bản & đồng bộ** hiển thị lịch sử và trạng thái cập nhật cột Sheet. **Sao chép để tạo phiên bản mới** lấy cấu hình từ một bản trước để chỉnh và xuất bản lại, không viết lại lịch sử.
 
 Danh mục GPB WHO có tab riêng: thêm/sửa tên, mã ICD-O, phân loại và lựa chọn ghi nội dung khác. Bỏ một chẩn đoán khỏi phiên bản mới không xóa chẩn đoán trên phiếu cũ. Các quy tắc chuyên môn của trường có sẵn, định danh bệnh viện và mã nghiên cứu vẫn do hệ thống kiểm tra. Sáu trường IOTA phải được bật/ngừng dùng cùng nhau để giữ quy tắc tổng tỷ lệ.
+
+### Thêm ô mô tả hoặc số lượng khi chọn Có
+
+Chọn câu hỏi Có/Không, trong **Câu hỏi phụ theo lựa chọn** chọn **Có**, rồi bấm **Thêm ô mô tả** hoặc **Thêm ô số lượng**. Câu hỏi phụ được đặt ngay sau câu hỏi chính, có thể đổi tên, đổi kiểu nhập và đánh dấu bắt buộc. Nếu đã có ô mô tả, bấm tên ô đó để chỉnh sửa.
+
+Trong **Điều kiện hiển thị** của bất kỳ câu hỏi nào, chọn câu hỏi chính và tích các giá trị làm hiện ô nhập. Hỗ trợ chọn một hoặc chọn nhiều; với chọn nhiều, chỉ cần một giá trị đã tích khớp điều kiện. Điều kiện hỗ trợ một cấp. Chọn **Luôn hiển thị** để bỏ điều kiện. Nếu đổi câu hỏi chính sang kiểu không có lựa chọn, các ô phụ chuyển sang luôn hiển thị và hệ thống thông báo để kiểm tra lại.
+
+Ô phụ bắt buộc chỉ được yêu cầu khi đang hiển thị. Khi đổi câu trả lời từ Có sang Không, nội dung ô phụ được xóa khỏi bản nháp để tránh gửi mô tả không còn phù hợp. Cột mô tả/số lượng được xuất riêng theo cấu hình xuất dữ liệu của câu hỏi phụ.
 
 Form có hai ô kết quả GPB: **WHO 1** là kết quả chính bắt buộc, **WHO 2** không bắt buộc. Mỗi ô có mã ICD-O, bản chất u và nội dung Khác riêng. Kết quả cũ được đọc thành WHO 1; WHO 2 để trống. Phân loại chính phục vụ thống kê lấy từ WHO 1, không tự suy diễn từ WHO 2. Sheet/Excel/CSV có hai cột tương ứng. Cột WHO gộp trên Sheet cũ được nhận diện bằng tên lịch sử khi nâng cấp cấu trúc.
 
@@ -23,7 +31,7 @@ Form có hai ô kết quả GPB: **WHO 1** là kết quả chính bắt buộc, 
 - Bỏ **Đang sử dụng trên form** để ngừng thu câu hỏi. Giữ bật **Có cột trong Google Sheets và Excel** để tiếp tục xuất dữ liệu lịch sử.
 - Nếu bỏ cột xuất, cột đó bị gỡ khỏi Sheet và các file tải mới sau khi cấu trúc được đồng bộ. Dữ liệu vẫn còn trong database và lịch sử phiếu. Có thể bật lại cột và đồng bộ lại các phiếu.
 - File Excel/CSV đã tải là bản chụp; phải tải lại để lấy cấu hình và dữ liệu mới. Đồng bộ Sheet là một chiều từ hệ thống. Không dùng việc sửa tay trên Sheet để cập nhật bệnh án.
-- Cột có sẵn trên Sheet được giữ vị trí; cột mới được thêm ở cuối. Thứ tự hiển thị trên form có thể khác thứ tự cột, nhưng mã, tên và giá trị tương ứng nhất quán.
+- Với Apps Script mới hỗ trợ bố cục theo nhóm, cột được sắp theo nhóm câu hỏi của phiên bản đang công bố, di chuyển cả cột để giữ nguyên dữ liệu. Bản Script cũ vẫn được hỗ trợ và giữ vị trí cột cũ. Bản xem trước cột và Excel/CSV dùng cùng thứ tự nhóm.
 - Sheet có cột lạ, trùng tiêu đề hoặc cột Mã phiếu bị đổi vị trí sẽ báo lỗi để đối chiếu; không tự xóa cột không nhận diện được.
 
 ## Cập nhật hệ thống đang dùng
