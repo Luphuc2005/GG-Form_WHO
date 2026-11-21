@@ -32,7 +32,7 @@ def test_upgrade_preserves_legacy_records_and_is_repeatable(tmp_path, stamped):
         row = db.execute("SELECT answers,workflow_status,revision,owner_id FROM submissions").fetchone()
         assert json.loads(row[0])["clinical_data"]["so_hs"] == "SYNTHETIC-ONLY"
         assert row[1:] == ("submitted", 1, None)
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "009_capacity_jobs"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "010_search_indexes"
         assert db.execute("SELECT count(*) FROM export_jobs").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM sheet_cleanup_jobs").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM form_drafts").fetchone()[0] == 0
