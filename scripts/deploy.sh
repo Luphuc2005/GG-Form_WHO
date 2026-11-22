@@ -40,5 +40,6 @@ docker compose run --rm --no-deps backend python -m app.commands.create_admin
 docker compose run --rm --no-deps backend python -m app.commands.check_deployment
 
 docker compose up -d --wait --wait-timeout 90
+trap 'echo "Ứng dụng đã khởi động nhưng bước kiểm tra cuối chưa đạt. Xem lỗi phía trên rồi chạy lại bash scripts/healthcheck.sh; giữ nguyên database và volume." >&2' ERR
 bash scripts/healthcheck.sh
 trap - ERR

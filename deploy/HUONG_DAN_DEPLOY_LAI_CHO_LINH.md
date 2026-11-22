@@ -75,4 +75,13 @@ Ngày 22/11/2026 bổ sung xuất Excel có tab Tổng hợp và năm tab bệnh
 
 ## Khi một bước thất bại
 
+Nếu tất cả container đã **Healthy**, schema là `010_search_indexes` nhưng cuối log có `curl: (3) URL rejected: Malformed input to a URL function`, cập nhật script kiểm tra rồi chạy lại:
+
+```bash
+git pull --ff-only origin main
+bash scripts/healthcheck.sh
+```
+
+Bản sửa xử lý Docker trả nhiều dòng IPv4/IPv6 thay vì ghép cả hai vào URL. Riêng lỗi này không cần build lại hay chạy lại migration. Cảnh báo `schema_json ... shadows ... BaseModel` không phải nguyên nhân `curl (3)`. Nếu kiểm tra sau đó báo lỗi khác, xử lý theo lỗi mới trước khi kết luận triển khai hoàn tất.
+
 Nếu lỗi ở preflight/build, bản cũ vẫn đang chạy. Nếu lỗi sau khi dừng để migration, giữ nguyên database, `.env`, toàn bộ volume và thư mục `backups`. Xem [hướng dẫn xử lý nâng cấp lỗi](../UPDATE_GUIDE.md). Có tag ảnh cũ trong `backups/deploy-*/backend-image.txt` và `nginx-image.txt`; không mở ảnh cũ với database đã thay đổi khi chưa đối chiếu migration. Sao lưu ở cùng máy chủ cần được chép thêm sang nơi lưu trữ khác.
